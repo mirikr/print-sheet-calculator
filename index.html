@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Раскладка на лист</title>
+  <meta name="description" content="Калькулятор раскладки изделий на печатный лист: сколько изделий поместится с учётом непечатаемых полей и вылетов под обрез, и сколько листов нужно на тираж.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='13' height='13' rx='3' fill='%2300a0e3'/%3E%3Crect x='17' y='2' width='13' height='13' rx='3' fill='%23e5007e'/%3E%3Crect x='2' y='17' width='13' height='13' rx='3' fill='%23ffd400'/%3E%3Crect x='17' y='17' width='13' height='13' rx='3' fill='%231d1d1b'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script>try { var t = localStorage.getItem('imposer-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}</script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      <div>
+        <h1>Раскладка на лист</h1>
+        <p>Сколько изделий поместится на печатном листе и сколько листов нужно на тираж</p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button class="btn" id="btnLink" type="button" title="Скопировать ссылку с текущими параметрами">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        Ссылка
+      </button>
+      <button class="btn" id="btnSvg" type="button" title="Скачать схему в SVG в масштабе 1:1 (мм)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        SVG
+      </button>
+      <button class="btn" id="btnPrint" type="button" title="Распечатать или сохранить в PDF">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+        Печать
+      </button>
+      <button class="btn icon" id="btnTheme" type="button" title="Светлая / тёмная тема" aria-label="Переключить тему">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main class="app">
+    <form class="panel controls" id="form" autocomplete="off" novalidate>
+
+      <section class="group">
+        <h2><span class="step">1</span>Печатный лист</h2>
+        <label class="field">
+          <span class="label">Формат листа</span>
+          <span class="select"><select id="sheetPreset"></select></span>
+        </label>
+        <div class="dims">
+          <label class="field">
+            <span class="label">Ширина</span>
+            <span class="input"><input id="sheetW" inputmode="decimal" spellcheck="false"><span class="unit">мм</span></span>
+          </label>
+          <button type="button" class="swap" id="sheetSwap" title="Поменять ширину и длину местами" aria-label="Поменять ширину и длину листа">⇄</button>
+          <label class="field">
+            <span class="label">Длина</span>
+            <span class="input"><input id="sheetH" inputmode="decimal" spellcheck="false"><span class="unit">мм</span></span>
+          </label>
+        </div>
+      </section>
+
+      <section class="group">
+        <h2><span class="step">2</span>Непечатаемые поля</h2>
+        <p class="hint">Края листа, куда машина не печатает (захват, клапан). Изделия вместе с обрезаемой частью должны поместиться в печатную область.</p>
+        <div class="margins">
+          <label class="m m-top"><span class="m-cap">сверху</span><span class="input sm"><input id="mT" inputmode="decimal" spellcheck="false" aria-label="Поле сверху, мм"><span class="unit">мм</span></span></label>
+          <label class="m m-left"><span class="m-cap">слева</span><span class="input sm"><input id="mL" inputmode="decimal" spellcheck="false" aria-label="Поле слева, мм"><span class="unit">мм</span></span></label>
+          <div class="m-area"><span>Печатная область</span><b id="paSize">—</b><span>мм</span></div>
+          <label class="m m-right"><span class="m-cap">справа</span><span class="input sm"><input id="mR" inputmode="decimal" spellcheck="false" aria-label="Поле справа, мм"><span class="unit">мм</span></span></label>
+          <label class="m m-bottom"><span class="m-cap">снизу</span><span class="input sm"><input id="mB" inputmode="decimal" spellcheck="false" aria-label="Поле снизу, мм"><span class="unit">мм</span></span></label>
+        </div>
+        <label class="check"><input type="checkbox" id="sym"><span>Симметричные поля<small>слева = справа, сверху = снизу</small></span></label>
+      </section>
+
+      <section class="group">
+        <h2><span class="step">3</span>Изделие</h2>
+        <label class="field">
+          <span class="label">Тип изделия</span>
+          <span class="select"><select id="itemPreset"></select></span>
+        </label>
+        <h3 class="sub"><span class="dot dot-item"></span>Основная часть <small>готовое изделие после резки</small></h3>
+        <div class="dims">
+          <label class="field">
+            <span class="label">Ширина</span>
+            <span class="input"><input id="itemW" inputmode="decimal" spellcheck="false"><span class="unit">мм</span></span>
+          </label>
+          <button type="button" class="swap" id="itemSwap" title="Поменять ширину и высоту местами" aria-label="Поменять ширину и высоту изделия">⇄</button>
+          <label class="field">
+            <span class="label">Высота</span>
+            <span class="input"><input id="itemH" inputmode="decimal" spellcheck="false"><span class="unit">мм</span></span>
+          </label>
+        </div>
+
+        <h3 class="sub"><span class="dot dot-bleed"></span>Обрезаемая часть <small>вылеты, уходят под нож</small></h3>
+        <div class="margins bleedbox">
+          <label class="m m-top"><span class="m-cap">сверху</span><span class="input sm"><input id="bT" inputmode="decimal" spellcheck="false" aria-label="Обрезаемая часть сверху, мм"><span class="unit">мм</span></span></label>
+          <label class="m m-left"><span class="m-cap">слева</span><span class="input sm"><input id="bL" inputmode="decimal" spellcheck="false" aria-label="Обрезаемая часть слева, мм"><span class="unit">мм</span></span></label>
+          <div class="m-area"><span>Основная часть</span><b id="netSize">—</b><span>мм</span></div>
+          <label class="m m-right"><span class="m-cap">справа</span><span class="input sm"><input id="bR" inputmode="decimal" spellcheck="false" aria-label="Обрезаемая часть справа, мм"><span class="unit">мм</span></span></label>
+          <label class="m m-bottom"><span class="m-cap">снизу</span><span class="input sm"><input id="bB" inputmode="decimal" spellcheck="false" aria-label="Обрезаемая часть снизу, мм"><span class="unit">мм</span></span></label>
+        </div>
+        <label class="check"><input type="checkbox" id="bsym"><span>Одинаковая со всех сторон</span></label>
+
+        <h3 class="sub"><span class="dot dot-gross"></span>Размер до обреза <small>основная + обрезаемая часть</small></h3>
+        <div class="dims nosw">
+          <label class="field">
+            <span class="label">Ширина</span>
+            <span class="input"><input id="grossW" inputmode="decimal" spellcheck="false"><span class="unit">мм</span></span>
+          </label>
+          <span class="times" aria-hidden="true">×</span>
+          <label class="field">
+            <span class="label">Высота</span>
+            <span class="input"><input id="grossH" inputmode="decimal" spellcheck="false"><span class="unit">мм</span></span>
+          </label>
+        </div>
+        <p class="hint after">Можно ввести любой из размеров: если знаете размер до обреза, основная часть пересчитается сама.</p>
+
+        <span class="label">Обрезаемая часть при раскладке</span>
+        <div class="seg" role="radiogroup" aria-label="Обрезаемая часть при раскладке">
+          <label><input type="radio" name="mode" value="sep"><span>У каждого изделия<small>двойной рез</small></span></label>
+          <label><input type="radio" name="mode" value="common"><span>Общий рез<small>встык, вылет по краю</small></span></label>
+        </div>
+        <p class="hint after" id="modeHint"></p>
+
+        <div class="row2" id="gapRow">
+          <label class="field">
+            <span class="label">Зазор между изделиями</span>
+            <span class="input"><input id="gap" inputmode="decimal" spellcheck="false"><span class="unit">мм</span></span>
+          </label>
+        </div>
+
+        <label class="check"><input type="checkbox" id="rotate"><span>Разрешить поворот на 90°<small>Отключите, если важно направление волокон или ориентация изделия</small></span></label>
+      </section>
+
+      <section class="group">
+        <h2><span class="step">4</span>Тираж</h2>
+        <div class="row2 tight">
+          <label class="field">
+            <span class="label">Нужно изделий</span>
+            <span class="input"><input id="qty" inputmode="numeric" spellcheck="false"><span class="unit">шт</span></span>
+          </label>
+          <label class="field">
+            <span class="label">Запас на приладку</span>
+            <span class="input"><input id="spoil" inputmode="decimal" spellcheck="false"><span class="unit">%</span></span>
+          </label>
+        </div>
+      </section>
+
+      <section class="group">
+        <h2><span class="step">5</span>Отображение</h2>
+        <span class="label">Положение раскладки</span>
+        <div class="seg" role="radiogroup" aria-label="Положение раскладки">
+          <label><input type="radio" name="align" value="c"><span>По центру<small>печатной области</small></span></label>
+          <label><input type="radio" name="align" value="tl"><span>От угла<small>левый верхний</small></span></label>
+        </div>
+        <label class="check"><input type="checkbox" id="marks"><span>Метки реза<small>видны только там, где их можно напечатать</small></span></label>
+        <label class="check"><input type="checkbox" id="numbers"><span>Номера изделий</span></label>
+      </section>
+
+      <button type="button" class="btn full" id="btnReset">Сбросить к значениям по умолчанию</button>
+      <p class="kbd-hint">В полях работают стрелки ↑ ↓: шаг 1 мм, с Shift — 10, с Alt — 0,1.</p>
+    </form>
+
+    <div class="results" id="results">
+      <div class="alert" id="alert" role="alert" hidden></div>
+
+      <div class="kpis">
+        <div class="kpi main">
+          <div class="kpi-label">Изделий на листе</div>
+          <div class="kpi-value" id="kPer">—</div>
+          <div class="kpi-sub" id="kPerSub">&nbsp;</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Листов на тираж</div>
+          <div class="kpi-value" id="kSheets">—</div>
+          <div class="kpi-sub" id="kSheetsSub">&nbsp;</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Лишние изделия</div>
+          <div class="kpi-value" id="kOver">—</div>
+          <div class="kpi-sub" id="kOverSub">&nbsp;</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Заполнение листа</div>
+          <div class="kpi-value" id="kFill">—</div>
+          <div class="kpi-sub" id="kFillSub">&nbsp;</div>
+        </div>
+      </div>
+
+      <section class="panel variants-panel">
+        <div class="panel-head">
+          <h2>Варианты раскладки</h2>
+          <span class="muted">нажмите на вариант, чтобы показать его на схеме</span>
+        </div>
+        <div class="variants" id="variants"></div>
+      </section>
+
+      <section class="panel figure">
+        <div class="panel-head">
+          <h2>Схема печатного листа</h2>
+          <span class="muted" id="figCaption"></span>
+        </div>
+        <div class="stage">
+          <svg id="sheetSvg" role="img" aria-label="Схема раскладки изделий на печатном листе" xmlns="http://www.w3.org/2000/svg"></svg>
+        </div>
+        <ul class="legend">
+          <li><span class="sw sw-nonprint"></span>Непечатаемое поле</li>
+          <li><span class="sw sw-pa"></span>Граница печатной области</li>
+          <li><span class="sw sw-bleed"></span>Обрезаемая часть (вылет)</li>
+          <li><span class="sw sw-item"></span>Основная часть изделия</li>
+          <li id="legendRot"><span class="sw sw-rot"></span>Основная часть, поворот 90°</li>
+          <li id="legendMarks"><span class="sw sw-mark"></span>Метки реза</li>
+        </ul>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Технические данные</h2>
+          <span class="muted">все размеры в миллиметрах</span>
+        </div>
+        <dl class="specs" id="specs"></dl>
+      </section>
+    </div>
+  </main>
+
+  <footer class="foot">Расчёт выполняется прямо в браузере, данные никуда не отправляются. Параметры сохраняются в ссылке — её можно отправить коллеге.</footer>
+
+  <button type="button" class="mobilebar" id="mobileBar" aria-label="Перейти к результатам">
+    <span><b id="mbPer">—</b> шт на листе</span>
+    <span id="mbSheets">—</span>
+    <span class="mb-go">к схеме ↓</span>
+  </button>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>
