@@ -45,20 +45,73 @@
 
       <section class="group">
         <h2><span class="step">1</span>Печатный лист</h2>
-        <label class="field">
-          <span class="label">Формат листа</span>
-          <span class="select"><select id="sheetPreset"></select></span>
-        </label>
-        <div class="dims">
-          <label class="field">
-            <span class="label">Ширина</span>
-            <span class="input"><input id="sheetW" inputmode="decimal" spellcheck="false"><span class="unit">мм</span></span>
-          </label>
-          <button type="button" class="swap" id="sheetSwap" title="Поменять ширину и длину местами" aria-label="Поменять ширину и длину листа">⇄</button>
-          <label class="field">
-            <span class="label">Длина</span>
-            <span class="input"><input id="sheetH" inputmode="decimal" spellcheck="false"><span class="unit">мм</span></span>
-          </label>
+        <div class="seg first" role="radiogroup" aria-label="Откуда берётся печатный лист">
+          <label><input type="radio" name="dv" value="0"><span>Целый лист<small>печатаю как есть</small></span></label>
+          <label><input type="radio" name="dv" value="1"><span>Делю лист бумаги<small>режу на части под машину</small></span></label>
+        </div>
+
+        <div id="wholeBlock">
+          <div class="field spaced">
+            <span class="label">Формат листа</span>
+            <div class="picker" id="sheetPicker"></div>
+          </div>
+          <div class="dims">
+            <label class="field">
+              <span class="label">Ширина</span>
+              <span class="input"><input id="sheetW" inputmode="decimal" spellcheck="false"><span class="unit">мм</span></span>
+            </label>
+            <button type="button" class="swap" id="sheetSwap" title="Поменять ширину и длину местами" aria-label="Поменять ширину и длину листа">⇄</button>
+            <label class="field">
+              <span class="label">Длина</span>
+              <span class="input"><input id="sheetH" inputmode="decimal" spellcheck="false"><span class="unit">мм</span></span>
+            </label>
+          </div>
+          <div class="lib-save" id="sheetSave"></div>
+        </div>
+
+        <div id="divideBlock" hidden>
+          <h3 class="sub"><span class="dot dot-paper"></span>Лист бумаги <small>исходный формат</small></h3>
+          <div class="picker" id="paperPicker"></div>
+          <div class="dims">
+            <label class="field">
+              <span class="label">Ширина</span>
+              <span class="input"><input id="paperW" inputmode="decimal" spellcheck="false"><span class="unit">мм</span></span>
+            </label>
+            <button type="button" class="swap" id="paperSwap" title="Поменять ширину и длину местами" aria-label="Поменять ширину и длину листа бумаги">⇄</button>
+            <label class="field">
+              <span class="label">Длина</span>
+              <span class="input"><input id="paperH" inputmode="decimal" spellcheck="false"><span class="unit">мм</span></span>
+            </label>
+          </div>
+          <div class="lib-save" id="paperSave"></div>
+
+          <h3 class="sub"><span class="dot dot-cut"></span>Делить на части</h3>
+          <div class="dims nosw">
+            <label class="field">
+              <span class="label">По ширине</span>
+              <span class="input"><input id="divN" inputmode="numeric" spellcheck="false"><span class="unit">шт</span></span>
+            </label>
+            <span class="times" aria-hidden="true">×</span>
+            <label class="field">
+              <span class="label">По длине</span>
+              <span class="input"><input id="divM" inputmode="numeric" spellcheck="false"><span class="unit">шт</span></span>
+            </label>
+          </div>
+
+          <label class="check"><input type="checkbox" id="machineOn"><span>Учитывать формат машины<small>самый большой лист, который берёт печатная машина</small></span></label>
+          <div class="dims nosw" id="machineDims">
+            <label class="field">
+              <span class="label">Ширина, макс.</span>
+              <span class="input"><input id="machW" inputmode="decimal" spellcheck="false"><span class="unit">мм</span></span>
+            </label>
+            <span class="times" aria-hidden="true">×</span>
+            <label class="field">
+              <span class="label">Длина, макс.</span>
+              <span class="input"><input id="machH" inputmode="decimal" spellcheck="false"><span class="unit">мм</span></span>
+            </label>
+          </div>
+
+          <div class="piece" id="pieceReadout"></div>
         </div>
       </section>
 
@@ -77,10 +130,10 @@
 
       <section class="group">
         <h2><span class="step">3</span>Изделие</h2>
-        <label class="field">
-          <span class="label">Тип изделия</span>
-          <span class="select"><select id="itemPreset"></select></span>
-        </label>
+        <div class="field">
+          <span class="label">Формат изделия</span>
+          <div class="picker" id="itemPicker"></div>
+        </div>
         <h3 class="sub"><span class="dot dot-item"></span>Основная часть <small>готовое изделие после резки</small></h3>
         <div class="dims">
           <label class="field">
@@ -117,6 +170,7 @@
           </label>
         </div>
         <p class="hint after">Можно ввести любой из размеров: если знаете размер до обреза, основная часть пересчитается сама.</p>
+        <div class="lib-save" id="itemSave"></div>
 
         <span class="label">Обрезаемая часть при раскладке</span>
         <div class="seg" role="radiogroup" aria-label="Обрезаемая часть при раскладке">
@@ -160,6 +214,17 @@
         <label class="check"><input type="checkbox" id="numbers"><span>Номера изделий</span></label>
       </section>
 
+      <section class="group">
+        <h2><span class="step">★</span>Моя библиотека форматов</h2>
+        <p class="hint">Форматы, сохранённые кнопкой «Сохранить в библиотеку», хранятся в этом браузере и остаются при следующем заходе. Чтобы перенести их на другое устройство или передать коллеге, скачайте файл и загрузите его там.</p>
+        <div class="lib-stats" id="libStats"></div>
+        <div class="lib-actions">
+          <button type="button" class="btn" id="libExport">Скачать файл</button>
+          <button type="button" class="btn" id="libImport">Загрузить файл</button>
+          <input type="file" id="libFile" accept=".json,application/json" hidden data-nostate>
+        </div>
+      </section>
+
       <button type="button" class="btn full" id="btnReset">Сбросить к значениям по умолчанию</button>
       <p class="kbd-hint">В полях работают стрелки ↑ ↓: шаг 1 мм, с Shift — 10, с Alt — 0,1.</p>
     </form>
@@ -174,9 +239,14 @@
           <div class="kpi-sub" id="kPerSub">&nbsp;</div>
         </div>
         <div class="kpi">
-          <div class="kpi-label">Листов на тираж</div>
+          <div class="kpi-label" id="kSheetsLabel">Листов на тираж</div>
           <div class="kpi-value" id="kSheets">—</div>
           <div class="kpi-sub" id="kSheetsSub">&nbsp;</div>
+        </div>
+        <div class="kpi" id="kPaperCard" hidden>
+          <div class="kpi-label">Листов бумаги</div>
+          <div class="kpi-value" id="kPaper">—</div>
+          <div class="kpi-sub" id="kPaperSub">&nbsp;</div>
         </div>
         <div class="kpi">
           <div class="kpi-label">Лишние изделия</div>
@@ -198,6 +268,15 @@
         <div class="variants" id="variants"></div>
       </section>
 
+      <section class="panel variants-panel" id="divPanel" hidden>
+        <div class="panel-head">
+          <h2>Варианты деления листа бумаги</h2>
+          <span class="muted" id="divNote">лучшие по количеству изделий с листа бумаги</span>
+        </div>
+        <div class="variants" id="divOptions"></div>
+      </section>
+
+      <div class="figures" id="figures">
       <section class="panel figure">
         <div class="panel-head">
           <h2>Схема печатного листа</h2>
@@ -215,6 +294,22 @@
           <li id="legendMarks"><span class="sw sw-mark"></span>Метки реза</li>
         </ul>
       </section>
+
+      <section class="panel figure" id="parentPanel" hidden>
+        <div class="panel-head">
+          <h2>Раскрой листа бумаги</h2>
+          <span class="muted" id="parentCaption"></span>
+        </div>
+        <div class="stage">
+          <svg id="parentSvg" role="img" aria-label="Схема деления листа бумаги на печатные листы" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"></svg>
+        </div>
+        <ul class="legend">
+          <li><span class="sw sw-cut"></span>Линии раскроя листа бумаги</li>
+          <li><span class="sw sw-paper"></span>Печатный лист (часть)</li>
+          <li><button type="button" class="btn sm" id="btnSvgParent">Скачать SVG раскроя</button></li>
+        </ul>
+      </section>
+      </div>
 
       <section class="panel">
         <div class="panel-head">
