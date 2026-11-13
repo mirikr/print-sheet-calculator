@@ -21,6 +21,10 @@
         <p>Сколько изделий поместится на печатном листе и сколько листов нужно на тираж</p>
       </div>
     </div>
+    <nav class="tabs" aria-label="Разделы сайта">
+      <button type="button" class="tab" data-view="calc" aria-pressed="true">Калькулятор</button>
+      <button type="button" class="tab" data-view="lib" aria-pressed="false">Библиотека форматов <span class="tab-count" id="libCount"></span></button>
+    </nav>
     <div class="top-actions">
       <button class="btn" id="btnLink" type="button" title="Скопировать ссылку с текущими параметрами">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
@@ -242,23 +246,8 @@
       <section class="group">
         <h2><span class="step">★</span>Библиотека форматов</h2>
         <div class="shared-status" id="sharedStatus"></div>
-
-        <h3 class="sub"><span class="dot dot-shared"></span>Общая <small>видна всем, кто открывает сайт</small></h3>
-        <ul class="lib-list" id="sharedList"></ul>
-        <details class="trash" id="trashBox">
-          <summary id="trashSummary">Корзина</summary>
-          <p class="hint">Удалённые из общей библиотеки форматы хранятся здесь 30 дней — любой может вернуть их обратно.</p>
-          <ul class="lib-list" id="trashList"></ul>
-        </details>
-
-        <h3 class="sub"><span class="dot dot-own"></span>Мои <small>только в этом браузере</small></h3>
-        <ul class="lib-list" id="ownList"></ul>
-        <p class="hint">Свои форматы можно перенести на другое устройство файлом или отправить в общую библиотеку кнопкой ↑.</p>
-        <div class="lib-actions">
-          <button type="button" class="btn" id="libExport">Скачать файл</button>
-          <button type="button" class="btn" id="libImport">Загрузить файл</button>
-          <input type="file" id="libFile" accept=".json,application/json" hidden data-nostate>
-        </div>
+        <p class="hint">Все форматы — общие, ваши и стандартные — собраны плитками в отдельном разделе. Там же можно добавить новый формат с описанием, удалить или вернуть из корзины.</p>
+        <button type="button" class="btn full" id="openLib">Открыть библиотеку форматов</button>
       </section>
 
       <button type="button" class="btn full" id="btnReset">Сбросить к значениям по умолчанию</button>
@@ -364,6 +353,94 @@
       </section>
     </div>
   </main>
+
+  <main class="libview" id="libView" hidden>
+    <div class="lib-head">
+      <div class="lib-title">
+        <h2>Библиотека форматов</h2>
+        <p class="shared-status" id="libStatus"></p>
+      </div>
+      <div class="lib-tools">
+        <label class="lib-search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input type="search" id="libSearch" placeholder="Поиск: название, размер, описание" autocomplete="off" spellcheck="false" aria-label="Поиск по библиотеке">
+        </label>
+        <div class="seg compact" role="radiogroup" aria-label="Тип формата">
+          <label><input type="radio" name="libKind" value="all" checked><span>Все</span></label>
+          <label><input type="radio" name="libKind" value="sheets"><span>Листы</span></label>
+          <label><input type="radio" name="libKind" value="items"><span>Изделия</span></label>
+        </div>
+        <button type="button" class="btn primary" id="libNew">+ Новый формат</button>
+      </div>
+    </div>
+    <p class="hint lib-hint">Нажмите на плитку, чтобы подставить формат в калькулятор: лист — как печатный лист (или лист бумаги в режиме деления), изделие — в раздел «Изделия».</p>
+
+    <section class="lib-sec" id="secShared">
+      <h3>Общая библиотека <small>видна всем, кто открывает сайт</small></h3>
+      <div class="tiles" id="tilesShared"></div>
+    </section>
+
+    <section class="lib-sec">
+      <div class="lib-sec-head">
+        <h3>Мои форматы <small>только в этом браузере</small></h3>
+        <div class="lib-actions">
+          <button type="button" class="btn sm" id="libExport">Скачать файл</button>
+          <button type="button" class="btn sm" id="libImport">Загрузить файл</button>
+          <input type="file" id="libFile" accept=".json,application/json" hidden>
+        </div>
+      </div>
+      <div class="tiles" id="tilesOwn"></div>
+    </section>
+
+    <section class="lib-sec">
+      <h3>Стандартные форматы</h3>
+      <div class="tiles" id="tilesStd"></div>
+    </section>
+
+    <details class="lib-sec trash" id="secTrash">
+      <summary><h3 id="trashTitle">Корзина общей библиотеки</h3></summary>
+      <p class="hint">Удалённые форматы хранятся здесь 30 дней — любой может вернуть их обратно.</p>
+      <div class="tiles" id="tilesTrash"></div>
+    </details>
+  </main>
+
+  <dialog class="fmt-dialog" id="fmtDialog" aria-labelledby="fmtTitle">
+    <form method="dialog" id="fmtForm" novalidate>
+      <h3 id="fmtTitle">Новый формат</h3>
+      <div class="seg" role="radiogroup" aria-label="Тип формата">
+        <label><input type="radio" name="fmtKind" value="items" checked><span>Изделие</span></label>
+        <label><input type="radio" name="fmtKind" value="sheets"><span>Лист</span></label>
+      </div>
+      <label class="field">
+        <span class="label">Название</span>
+        <span class="input"><input id="fmtName" maxlength="60" spellcheck="false" placeholder="Например: Наклейка круглая"></span>
+      </label>
+      <label class="field">
+        <span class="label">Краткое описание <span class="muted">— необязательно</span></span>
+        <textarea id="fmtDesc" class="textarea" maxlength="140" rows="2" placeholder="Например: для клиента «Ромашка», бумага 300 г"></textarea>
+      </label>
+      <div class="dims nosw">
+        <label class="field">
+          <span class="label" id="fmtWLabel">Ширина в обрез</span>
+          <span class="input"><input id="fmtW" inputmode="decimal" spellcheck="false"><span class="unit">мм</span></span>
+        </label>
+        <span class="times" aria-hidden="true">×</span>
+        <label class="field">
+          <span class="label" id="fmtHLabel">Высота в обрез</span>
+          <span class="input"><input id="fmtH" inputmode="decimal" spellcheck="false"><span class="unit">мм</span></span>
+        </label>
+      </div>
+      <label class="field" id="fmtBleedField">
+        <span class="label">Обрезаемая часть (вылет) с каждой стороны</span>
+        <span class="input"><input id="fmtBleed" inputmode="decimal" spellcheck="false"><span class="unit">мм</span></span>
+      </label>
+      <div class="fmt-actions">
+        <button type="button" class="btn primary" id="fmtShared">В общую библиотеку</button>
+        <button type="button" class="btn" id="fmtOwn">Только себе</button>
+        <button type="button" class="btn" id="fmtCancel">Отмена</button>
+      </div>
+    </form>
+  </dialog>
 
   <footer class="foot">Расчёт выполняется прямо в браузере, данные никуда не отправляются. Параметры сохраняются в ссылке — её можно отправить коллеге.</footer>
 

@@ -740,6 +740,7 @@
   function cleanEntry(e, withBleed) {
     if (!e || typeof e.name !== 'string' || !okNum(e.w, 1e5) || !okNum(e.h, 1e5)) return null;
     const out = { name: e.name.trim().slice(0, 60) || `Формат ${sz(+e.w, +e.h)}`, w: +e.w, h: +e.h };
+    if (typeof e.d === 'string' && e.d.trim()) out.d = e.d.trim().slice(0, 140);
     if (withBleed && Array.isArray(e.b) && e.b.length === 4 && e.b.every((x) => Number.isFinite(+x) && +x >= 0 && +x <= 1000)) {
       out.b = e.b.map(Number);
     }
@@ -789,7 +790,7 @@
   function sharedEntry(r) {
     const kind = r && (r.kind === 'items' || r.kind === 'sheets') ? r.kind : null;
     if (!kind) return null;
-    const e = cleanEntry({ name: r.name, w: r.w, h: r.h, b: r.b }, kind === 'items');
+    const e = cleanEntry({ name: r.name, w: r.w, h: r.h, b: r.b, d: r.description || '' }, kind === 'items');
     return e && { ...e, id: r.id, kind, createdAt: r.created_at, deletedAt: r.deleted_at || null };
   }
 
@@ -798,7 +799,7 @@
     try {
       const since = new Date(Date.now() - TRASH_DAYS * 864e5).toISOString();
       const filter = encodeURIComponent(`(deleted_at.is.null,deleted_at.gt.${since})`);
-      const rows = await sb(`${SB_TABLE}?select=id,kind,name,w,h,b,created_at,deleted_at&or=${filter}&order=created_at.desc&limit=2000`);
+      const rows = await sb(`${SB_TABLE}?select=id,kind,name,description,w,h,b,created_at,deleted_at&or=${filter}&order=created_at.desc&limit=2000`);
       shared.sheets = [];
       shared.items = [];
       shared.trash = [];
@@ -823,7 +824,7 @@
     const dup = shared[kind].find((e) => e.name.toLowerCase() === entry.name.toLowerCase() && sameSize(e, entry.w, entry.h));
     if (dup) { toast(`«${entry.name}» уже есть в общей библиотеке`); return true; }
     try {
-      const body = { kind, name: entry.name, w: entry.w, h: entry.h, b: kind === 'items' && entry.b ? entry.b : null };
+      const body = { kind, name: entry.name, description: entry.d || null, w: entry.w, h: entry.h, b: kind === 'items' && entry.b ? entry.b : null };
       const rows = await sb(SB_TABLE, { method: 'POST', body, prefer: 'return=representation' });
       const e = sharedEntry(rows && rows[0]);
       if (e) shared[kind].unshift(e);
@@ -842,7 +843,7 @@
     await sb(`${SB_TABLE}?id=eq.${encodeURIComponent(e.id)}`, { method: 'PATCH', body: { deleted_at: deletedAt } });
     shared[e.kind] = shared[e.kind].filter((x) => x.id !== e.id);
     shared.trash = shared.trash.filter((x) => x.id !== e.id);
-    const moved = { id: e.id, kind: e.kind, name: e.name, w: e.w, h: e.h, b: e.b, createdAt: e.createdAt, deletedAt };
+    const moved = { id: e.id, kind: e.kind, name: e.name, d: e.d, w: e.w, h: e.h, b: e.b, createdAt: e.createdAt, deletedAt };
     if (deleted) shared.trash.unshift(moved); else shared[e.kind].unshift(moved);
     refreshLibraries();
   }
@@ -882,7 +883,7 @@
   const entryLabel = (e) => (e.name ? `${e.name} — ${sz(e.w, e.h)} мм` : `${sz(e.w, e.h)} мм`);
   const bleedShort = (b) => (b.every((x) => near(x, b[0])) ? `вылет ${fmt(b[0])}` : `вылеты ${b.map(fmt).join('/')}`);
   const normQ = (s) => String(s).toLowerCase().replace(/ё/g, 'е').replace(/[×х*]/g, 'x').replace(/,/g, '.').replace(/\s+/g, ' ').trim();
-  const hay = (e) => normQ(`${e.name} ${e.group} ${e.w}x${e.h} ${e.h}x${e.w} ${e.w} ${e.h}`);
+  const hay = (e) => normQ(`${e.name} ${e.d || ''} ${e.group || ''} ${e.w}x${e.h} ${e.h}x${e.w} ${e.w} ${e.h}`);
   const queryTokens = (q) => normQ(q).replace(/\s*x\s*/g, 'x').split(' ').filter(Boolean);
 
   const SEARCH_ICON = '<svg class="picker-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>';
@@ -1038,6 +1039,7 @@
       <button type="button" class="lib-btn">${STAR_ICON}Сохранить в библиотеку</button>
       <div class="lib-form" hidden>
         <span class="input"><input type="text" class="lib-name" maxlength="60" data-nostate aria-label="Название формата для библиотеки"></span>
+        <span class="input"><input type="text" class="lib-name lib-desc" maxlength="140" data-nostate placeholder="Краткое описание — необязательно" aria-label="Краткое описание формата"></span>
         <div class="lib-form-actions">
           ${SHARED_ON ? '<button type="button" class="btn sm primary lib-share" title="Формат увидят все, кто открывает сайт">В общую библиотеку</button>' : ''}
           <button type="button" class="btn sm${SHARED_ON ? '' : ' primary'} lib-ok" title="Только в этом браузере">${SHARED_ON ? 'Только себе' : 'Сохранить'}</button>
@@ -1046,7 +1048,8 @@
       </div>`;
     const btn = host.querySelector('.lib-btn');
     const box = host.querySelector('.lib-form');
-    const name = host.querySelector('.lib-name');
+    const name = host.querySelector('.lib-name:not(.lib-desc)');
+    const desc = host.querySelector('.lib-desc');
 
     const hide = () => { box.hidden = true; btn.hidden = false; };
     btn.addEventListener('click', () => {
@@ -1055,13 +1058,14 @@
       btn.hidden = true;
       box.hidden = false;
       name.value = '';
+      desc.value = '';
       name.placeholder = `Название, например «${noun} ${sz(e.w, e.h)}»`;
       name.focus();
     });
     const save = (toShared) => {
       const e = getEntry();
       if (!e) { toast('Сначала введите корректные размеры'); return; }
-      const entry = cleanEntry({ ...e, name: name.value.trim() || `${noun} ${sz(e.w, e.h)}` }, kind === 'items');
+      const entry = cleanEntry({ ...e, name: name.value.trim() || `${noun} ${sz(e.w, e.h)}`, d: desc.value }, kind === 'items');
       if (toShared) {
         addShared(kind, entry).then((ok) => { if (ok) hide(); });
         return;
@@ -1077,10 +1081,12 @@
     host.querySelector('.lib-ok').addEventListener('click', () => save(false));
     if (SHARED_ON) host.querySelector('.lib-share').addEventListener('click', () => save(true));
     host.querySelector('.lib-cancel').addEventListener('click', hide);
-    name.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); save(SHARED_ON); }
-      if (e.key === 'Escape') { e.preventDefault(); hide(); }
-    });
+    for (const el of [name, desc]) {
+      el.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); save(SHARED_ON); }
+        if (e.key === 'Escape') { e.preventDefault(); hide(); }
+      });
+    }
   }
 
   const sizeOf = (a, b) => [parseNum(inp[a].value), parseNum(inp[b].value)];
@@ -1146,53 +1152,108 @@
     },
   });
 
-  const libRow = (e, kindLabel, note, buttons) => `<li>
-      <span class="li-main"><span class="li-name">${esc(e.name)}</span>
-        <span class="li-meta">${sz(e.w, e.h)} мм${e.b ? ` · ${bleedShort(e.b)}` : ''} · ${kindLabel}${note ? ` · ${note}` : ''}</span></span>
-      <span class="li-act">${buttons}</span>
-    </li>`;
-  const kindLabel = (kind) => (kind === 'items' ? 'изделие' : 'лист');
+  /* ---------- Раздел «Библиотека форматов»: плитки ---------- */
 
-  // Панель «Библиотека форматов»: общая, корзина, мои.
-  function renderLibStats() {
-    const status = $('sharedStatus');
-    const nShared = shared.sheets.length + shared.items.length;
-    if (!SHARED_ON) {
-      status.innerHTML = '<span class="muted">Общая библиотека не подключена: в файле <code>config.js</code> не указан адрес Supabase.</span>';
-    } else if (shared.status === 'loading') {
-      status.innerHTML = '<span class="muted">Загружаю общую библиотеку…</span>';
-    } else if (shared.status === 'error') {
-      status.innerHTML = '<span class="bad">● нет связи с общей библиотекой</span> <button type="button" class="link-btn" data-lib="reload">повторить</button>';
-    } else {
-      status.innerHTML = `<span class="good">● подключена</span> · ${nShared} ${plural(nShared, 'формат', 'формата', 'форматов')} <button type="button" class="link-btn" data-lib="reload">обновить</button>`;
+  const STD_DESC = { [G_PRESS]: 'Стандартный печатный лист', [G_PAPER]: 'Стандартный лист бумаги', [G_ITEMS]: 'Стандартное изделие' };
+  const dateRu = (iso) => { const d = new Date(iso); return Number.isNaN(+d) ? '' : d.toLocaleDateString('ru-RU'); };
+
+  // Миниатюра формата в пропорциях: лист — белый, изделие — основная часть с вылетом вокруг.
+  function tileArt(e, kind) {
+    const b = kind === 'items' && e.b ? e.b : [0, 0, 0, 0];
+    const gw = e.w + b[1] + b[3], gh = e.h + b[0] + b[2];
+    const s = 76 / Math.max(gw, gh);
+    const x = (100 - gw * s) / 2, y = (100 - gh * s) / 2;
+    if (kind !== 'items') {
+      return `<svg viewBox="0 0 100 100" aria-hidden="true"><rect x="${r3(x)}" y="${r3(y)}" width="${r3(gw * s)}" height="${r3(gh * s)}" rx="1" class="art-sheet"/></svg>`;
+    }
+    const bleed = b.some((v) => v > 0)
+      ? `<rect x="${r3(x)}" y="${r3(y)}" width="${r3(gw * s)}" height="${r3(gh * s)}" class="art-bleed"/>` : '';
+    return `<svg viewBox="0 0 100 100" aria-hidden="true">${bleed}<rect x="${r3(x + b[3] * s)}" y="${r3(y + b[0] * s)}" width="${r3(e.w * s)}" height="${r3(e.h * s)}" class="art-item"/></svg>`;
+  }
+
+  function tileHtml(e, kind, src, key) {
+    let desc = e.d || '';
+    if (src === 'std') desc = STD_DESC[e.group] || '';
+    else if (src === 'trash') {
+      const ago = Math.max(0, Math.floor((Date.now() - Date.parse(e.deletedAt)) / 864e5));
+      desc = `${ago ? `Удалён ${ago} дн. назад` : 'Удалён сегодня'} · вернуть можно ещё ${Math.max(1, TRASH_DAYS - ago)} дн.`;
+    } else if (!desc) desc = src === 'shared' ? `Добавлен ${dateRu(e.createdAt)}` : 'Сохранён в этом браузере';
+
+    const acts = [];
+    if (src === 'own') {
+      if (SHARED_ON) acts.push(`<button type="button" class="icon-btn" data-lib="share" data-kind="${kind}" data-idx="${key}" title="Отправить в общую библиотеку" aria-label="Отправить «${esc(e.name)}» в общую библиотеку">↑</button>`);
+      acts.push(`<button type="button" class="icon-btn del" data-lib="del-own" data-kind="${kind}" data-idx="${key}" title="Удалить из моих форматов (можно отменить)" aria-label="Удалить «${esc(e.name)}»">${ICON_X}</button>`);
+    } else if (src === 'shared') {
+      acts.push(`<button type="button" class="icon-btn del" data-lib="trash" data-id="${esc(e.id)}" title="Убрать в корзину (можно вернуть)" aria-label="Убрать «${esc(e.name)}» в корзину">${ICON_X}</button>`);
+    } else if (src === 'trash') {
+      acts.push(`<button type="button" class="btn sm" data-lib="restore" data-id="${esc(e.id)}">Вернуть</button>`);
+    }
+    const clickable = src !== 'trash';
+    const name = e.name || `${sz(e.w, e.h)} мм`;
+    return `<div class="tile${clickable ? '' : ' is-trash'}"${clickable ? ' role="button" tabindex="0"' : ''} data-src="${src}" data-kind="${kind}" data-key="${esc(key)}"
+        title="${esc(name)}${e.d ? ` — ${esc(e.d)}` : ''}${clickable ? ' · нажмите, чтобы применить' : ''}">
+      <span class="tile-kind">${kind === 'items' ? 'изделие' : 'лист'}</span>
+      ${acts.length ? `<div class="tile-act">${acts.join('')}</div>` : ''}
+      <div class="tile-art">${tileArt(e, kind)}</div>
+      <div class="tile-name">${esc(name)}</div>
+      <div class="tile-size">${sz(e.w, e.h)} мм${kind === 'items' && e.b && e.b.some((v) => v > 0) ? ` · ${bleedShort(e.b)}` : ''}</div>
+      <div class="tile-desc">${esc(desc)}</div>
+    </div>`;
+  }
+
+  function renderLibraryView() {
+    const total = shared.sheets.length + shared.items.length + lib.sheets.length + lib.items.length;
+    $('libCount').textContent = total ? String(total) : '';
+    if ($('libView').hidden) return;
+
+    const tokens = queryTokens($('libSearch').value);
+    const kindF = (document.querySelector('input[name="libKind"]:checked') || {}).value || 'all';
+    const ok = (e, kind) => (kindF === 'all' || kindF === kind) && tokens.every((t) => hay(e).includes(t));
+    const filtering = tokens.length > 0 || kindF !== 'all';
+    const newTile = '<button type="button" class="tile tile-new" data-new="1"><span class="tile-plus">+</span><span class="tile-name">Новый формат</span><span class="tile-desc">с названием и описанием</span></button>';
+    const empty = (text) => `<p class="muted tiles-empty">${text}</p>`;
+
+    // Общая
+    $('secShared').hidden = !SHARED_ON;
+    if (SHARED_ON) {
+      const list = [...shared.sheets.map((e) => [e, 'sheets']), ...shared.items.map((e) => [e, 'items'])]
+        .sort((a, b) => (a[0].createdAt < b[0].createdAt ? 1 : -1))
+        .filter(([e, k]) => ok(e, k));
+      $('tilesShared').innerHTML = (filtering ? '' : newTile) + list.map(([e, k]) => tileHtml(e, k, 'shared', e.id)).join('') +
+        (list.length ? '' : filtering ? empty('Ничего не найдено.')
+          : shared.status === 'ok' ? '' : empty(shared.status === 'loading' ? 'Загружаю…' : 'Нет связи с общей библиотекой.'));
     }
 
-    const sharedRows = [...shared.sheets, ...shared.items]
-      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
-      .map((e) => libRow(e, kindLabel(e.kind), '',
-        `<button type="button" class="icon-btn del" data-lib="trash" data-id="${esc(e.id)}" title="Убрать в корзину (можно вернуть)" aria-label="Убрать «${esc(e.name)}» в корзину">${ICON_X}</button>`));
-    $('sharedList').innerHTML = sharedRows.length ? sharedRows.join('')
-      : `<li class="li-empty">${SHARED_ON && shared.status === 'ok' ? 'Пока пусто — сохраните формат кнопкой «В общую библиотеку».' : '—'}</li>`;
-    $('sharedList').hidden = !SHARED_ON;
+    // Мои
+    const own = [...lib.sheets.map((e, i) => [e, 'sheets', i]), ...lib.items.map((e, i) => [e, 'items', i])].filter(([e, k]) => ok(e, k));
+    $('tilesOwn').innerHTML = (SHARED_ON || filtering ? '' : newTile) + own.map(([e, k, i]) => tileHtml(e, k, 'own', i)).join('') +
+      (own.length ? '' : filtering ? empty('Ничего не найдено.') : SHARED_ON ? empty('Пока пусто. Свои форматы сохраняются кнопкой «Сохранить в библиотеку» → «Только себе».') : '');
+    $('libExport').disabled = !(lib.sheets.length + lib.items.length);
 
-    $('trashBox').hidden = !SHARED_ON;
-    $('trashSummary').textContent = `Корзина${shared.trash.length ? ` (${shared.trash.length})` : ''}`;
-    $('trashList').innerHTML = shared.trash.length
-      ? shared.trash.map((e) => {
-        const ago = Math.max(0, Math.floor((Date.now() - Date.parse(e.deletedAt)) / 864e5));
-        const left = Math.max(1, TRASH_DAYS - ago);
-        return libRow(e, kindLabel(e.kind), `${ago ? `удалён ${ago} дн. назад` : 'удалён сегодня'}, ещё ${left} дн.`,
-          `<button type="button" class="btn sm" data-lib="restore" data-id="${esc(e.id)}">Вернуть</button>`);
-      }).join('')
-      : '<li class="li-empty">Корзина пуста.</li>';
+    // Стандартные
+    const std = [...SHEET_FORMATS.map((e, i) => [e, 'sheets', i]), ...ITEM_FORMATS.map((e, i) => [e, 'items', i])].filter(([e, k]) => ok(e, k));
+    $('tilesStd').innerHTML = std.map(([e, k, i]) => tileHtml(e, k, 'std', i)).join('') || empty('Ничего не найдено.');
 
-    const own = [...lib.sheets.map((e, i) => [e, 'sheets', i]), ...lib.items.map((e, i) => [e, 'items', i])];
-    $('ownList').innerHTML = own.length
-      ? own.map(([e, kind, i]) => libRow(e, kindLabel(kind), '',
-        (SHARED_ON ? `<button type="button" class="icon-btn" data-lib="share" data-kind="${kind}" data-idx="${i}" title="Отправить в общую библиотеку" aria-label="Отправить «${esc(e.name)}» в общую библиотеку">↑</button>` : '') +
-        `<button type="button" class="icon-btn del" data-lib="del-own" data-kind="${kind}" data-idx="${i}" title="Удалить из моих форматов" aria-label="Удалить «${esc(e.name)}»">${ICON_X}</button>`)).join('')
-      : '<li class="li-empty">Пока пусто — сохраните формат кнопкой «Сохранить в библиотеку».</li>';
-    $('libExport').disabled = !own.length;
+    // Корзина
+    const trash = shared.trash.filter((e) => ok(e, e.kind));
+    $('secTrash').hidden = !SHARED_ON || !shared.trash.length;
+    $('trashTitle').textContent = `Корзина общей библиотеки (${shared.trash.length})`;
+    $('tilesTrash').innerHTML = trash.map((e) => tileHtml(e, e.kind, 'trash', e.id)).join('') || empty('Ничего не найдено.');
+  }
+
+  function sharedStatusHtml() {
+    const n = shared.sheets.length + shared.items.length;
+    if (!SHARED_ON) return '<span class="muted">Общая библиотека не подключена: в файле <code>config.js</code> не указан адрес Supabase.</span>';
+    if (shared.status === 'loading') return '<span class="muted">Загружаю общую библиотеку…</span>';
+    if (shared.status === 'error') return '<span class="bad">● нет связи с общей библиотекой</span> <button type="button" class="link-btn" data-lib="reload">повторить</button>';
+    return `<span class="good">● общая библиотека подключена</span> · ${n} ${plural(n, 'формат', 'формата', 'форматов')} <button type="button" class="link-btn" data-lib="reload">обновить</button>`;
+  }
+
+  function renderLibStats() {
+    const html = sharedStatusHtml();
+    $('sharedStatus').innerHTML = html;
+    $('libStatus').innerHTML = html;
+    renderLibraryView();
   }
   function refreshLibraries() {
     pickers.forEach((pk) => pk.refresh());
@@ -2107,8 +2168,142 @@
     if (fn) fn();
   });
 
-  // Кнопки в панели библиотеки
-  form.addEventListener('click', (e) => {
+  /* ---------- Разделы сайта и библиотека ---------- */
+
+  const VIEW_KEY = 'imposer-view';
+  function showView(v) {
+    const isLib = v === 'lib';
+    $('libView').hidden = !isLib;
+    document.querySelector('main.app').hidden = isLib;
+    document.body.classList.toggle('view-lib', isLib);
+    document.querySelectorAll('.tab').forEach((t) => t.setAttribute('aria-pressed', String(t.dataset.view === v)));
+    try { localStorage.setItem(VIEW_KEY, v); } catch (e) { /* ignore */ }
+    if (isLib) renderLibraryView();
+    window.scrollTo(0, 0);
+  }
+  document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => showView(t.dataset.view)));
+  $('openLib').addEventListener('click', () => showView('lib'));
+  $('libSearch').addEventListener('input', renderLibraryView);
+  document.querySelectorAll('input[name="libKind"]').forEach((r) => r.addEventListener('change', renderLibraryView));
+
+  // Нажатие на плитку — подставить формат в калькулятор
+  function applyFormat(e, kind) {
+    const name = e.name || `${sz(e.w, e.h)} мм`;
+    if (kind === 'sheets') {
+      const dv = radioVal('dv') === '1';
+      applySheet(e, dv ? 'pw' : 'sw', dv ? 'ph' : 'sh');
+      toast(`«${name}» подставлен как ${dv ? 'лист бумаги' : 'печатный лист'}`);
+    } else if (radioVal('mm') === '1') {
+      const last = collectItems().pop();
+      showView('calc');
+      addItem({ name: e.name || '', w: e.w, h: e.h, b: e.b ? Math.max(...e.b) : (last ? last.b : '2'), q: last ? last.q : '1000', n: '1' });
+      toast(`«${name}» добавлен в список изделий`);
+      return;
+    } else {
+      inp.iw.value = toInput(e.w);
+      inp.ih.value = toInput(e.h);
+      if (e.b) {
+        ['bt', 'br', 'bb', 'bl'].forEach((k, i) => { inp[k].value = toInput(e.b[i]); });
+        $('bsym').checked = e.b.every((x) => near(x, e.b[0]));
+      }
+      schedule();
+      toast(`«${name}» подставлен как изделие`);
+    }
+    showView('calc');
+  }
+
+  function tileEntry(tile) {
+    const { src, kind, key } = tile.dataset;
+    if (src === 'shared') return shared[kind].find((x) => x.id === key);
+    if (src === 'own') return lib[kind][Number(key)];
+    if (src === 'std') return (kind === 'items' ? ITEM_FORMATS : SHEET_FORMATS)[Number(key)];
+    return null;
+  }
+
+  $('libView').addEventListener('click', (ev) => {
+    if (ev.target.closest('[data-lib]')) return; // кнопки на плитке обрабатываются отдельно
+    if (ev.target.closest('[data-new]') || ev.target.closest('#libNew')) { openFmtDialog(); return; }
+    const tile = ev.target.closest('.tile[role="button"]');
+    if (!tile) return;
+    const e = tileEntry(tile);
+    if (e) applyFormat(e, tile.dataset.kind);
+  });
+  $('libView').addEventListener('keydown', (ev) => {
+    if (ev.key !== 'Enter' && ev.key !== ' ') return;
+    const tile = ev.target.closest('.tile[role="button"]');
+    if (!tile || ev.target !== tile) return;
+    ev.preventDefault();
+    tile.click();
+  });
+
+  // Окно «Новый формат»
+  const fmtKind = () => (document.querySelector('input[name="fmtKind"]:checked') || {}).value || 'items';
+  function fillFmtSizes() {
+    const items = fmtKind() === 'items';
+    const dv = radioVal('dv') === '1';
+    const [w, h] = items ? sizeOf('iw', 'ih') : dv ? sizeOf('pw', 'ph') : sizeOf('sw', 'sh');
+    $('fmtW').value = Number.isFinite(w) ? toInput(w) : '';
+    $('fmtH').value = Number.isFinite(h) ? toInput(h) : '';
+    $('fmtBleed').value = items ? toInput(parseNum(inp.bt.value) || 0) : '';
+    $('fmtBleedField').hidden = !items;
+    $('fmtWLabel').textContent = items ? 'Ширина в обрез' : 'Ширина';
+    $('fmtHLabel').textContent = items ? 'Высота в обрез' : 'Длина';
+  }
+  function openFmtDialog() {
+    const kf = (document.querySelector('input[name="libKind"]:checked') || {}).value;
+    const kindRadio = document.querySelector(`input[name="fmtKind"][value="${kf === 'sheets' ? 'sheets' : 'items'}"]`);
+    if (kindRadio) kindRadio.checked = true;
+    $('fmtName').value = '';
+    $('fmtDesc').value = '';
+    fillFmtSizes();
+    $('fmtShared').hidden = !SHARED_ON;
+    $('fmtOwn').classList.toggle('primary', !SHARED_ON);
+    $('fmtOwn').textContent = SHARED_ON ? 'Только себе' : 'Сохранить';
+    document.querySelectorAll('#fmtForm .input').forEach((x) => x.classList.remove('invalid'));
+    const dlg = $('fmtDialog');
+    if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
+    $('fmtName').focus();
+  }
+  function closeFmtDialog() {
+    const dlg = $('fmtDialog');
+    if (typeof dlg.close === 'function') dlg.close(); else dlg.removeAttribute('open');
+  }
+  document.querySelectorAll('input[name="fmtKind"]').forEach((r) => r.addEventListener('change', fillFmtSizes));
+  $('fmtCancel').addEventListener('click', closeFmtDialog);
+  $('fmtForm').addEventListener('submit', (e) => e.preventDefault());
+  async function saveFmt(toShared) {
+    const items = fmtKind() === 'items';
+    const w = parseNum($('fmtW').value), h = parseNum($('fmtH').value);
+    const b = items ? parseNum($('fmtBleed').value || '0') : 0;
+    const okW = okNum(w, 1e5), okH = okNum(h, 1e5), okB = !items || (Number.isFinite(b) && b >= 0 && b <= 1000);
+    $('fmtW').closest('.input').classList.toggle('invalid', !okW);
+    $('fmtH').closest('.input').classList.toggle('invalid', !okH);
+    $('fmtBleed').closest('.input').classList.toggle('invalid', !okB);
+    if (!okW || !okH || !okB) { toast('Проверьте размеры формата'); return; }
+    const kind = items ? 'items' : 'sheets';
+    const entry = cleanEntry({
+      name: $('fmtName').value.trim() || `${items ? 'Изделие' : 'Лист'} ${sz(w, h)}`,
+      d: $('fmtDesc').value, w, h, b: items ? [b, b, b, b] : undefined,
+    }, items);
+    if (toShared) {
+      if (await addShared(kind, entry)) closeFmtDialog();
+      return;
+    }
+    const replaced = upsert(kind, entry);
+    const ok = persistLib();
+    refreshLibraries();
+    closeFmtDialog();
+    toast(!ok ? 'Не удалось сохранить: браузер запрещает хранить данные'
+      : replaced ? `«${entry.name}» обновлён в ваших форматах` : `«${entry.name}» сохранён в ваши форматы`);
+  }
+  $('fmtShared').addEventListener('click', () => saveFmt(true));
+  $('fmtOwn').addEventListener('click', () => saveFmt(false));
+  $('fmtForm').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); saveFmt(SHARED_ON); }
+  });
+
+  // Кнопки библиотеки (на плитках и в строке статуса)
+  document.addEventListener('click', (e) => {
     const b = e.target.closest('[data-lib]');
     if (!b) return;
     const act = b.dataset.lib;
@@ -2137,6 +2332,7 @@
   apply(loadInitial());
   renderLibStats();
   update();
+  try { if (localStorage.getItem(VIEW_KEY) === 'lib') showView('lib'); } catch (e) { /* ignore */ }
 
   if (SHARED_ON) {
     loadShared(true);
