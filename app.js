@@ -812,9 +812,10 @@
       shared.status = 'ok';
       shared.error = '';
     } catch (err) {
-      shared.status = 'error';
+      // 404 — в базе ещё нет таблицы: владелец проекта не выполнил supabase/shared-library.sql
+      shared.status = err.message.startsWith('404') ? 'missing' : 'error';
       shared.error = err.message;
-      if (!quiet) toast('Общая библиотека недоступна — проверьте интернет');
+      if (!quiet) toast(shared.status === 'missing' ? 'Общая библиотека ещё не настроена в Supabase' : 'Общая библиотека недоступна — проверьте интернет');
     }
     refreshLibraries();
   }
@@ -832,7 +833,9 @@
       toast(`«${entry.name}» добавлен в общую библиотеку — его видят все`);
       return true;
     } catch (err) {
-      toast('Не удалось сохранить в общую библиотеку');
+      toast(err.message.startsWith('404')
+        ? 'Общая библиотека ещё не настроена в Supabase — сохраните пока «Только себе»'
+        : 'Не удалось сохранить в общую библиотеку');
       return false;
     }
   }
@@ -1219,9 +1222,9 @@
       const list = [...shared.sheets.map((e) => [e, 'sheets']), ...shared.items.map((e) => [e, 'items'])]
         .sort((a, b) => (a[0].createdAt < b[0].createdAt ? 1 : -1))
         .filter(([e, k]) => ok(e, k));
-      $('tilesShared').innerHTML = (filtering ? '' : newTile) + list.map(([e, k]) => tileHtml(e, k, 'shared', e.id)).join('') +
-        (list.length ? '' : filtering ? empty('Ничего не найдено.')
-          : shared.status === 'ok' ? '' : empty(shared.status === 'loading' ? 'Загружаю…' : 'Нет связи с общей библиотекой.'));
+      const notice = { loading: 'Загружаю…', missing: 'Общая библиотека ещё не настроена в Supabase.', error: 'Нет связи с общей библиотекой.' }[shared.status];
+      $('tilesShared').innerHTML = (filtering || shared.status === 'missing' ? '' : newTile) + list.map(([e, k]) => tileHtml(e, k, 'shared', e.id)).join('') +
+        (list.length ? '' : filtering ? empty('Ничего не найдено.') : notice ? empty(notice) : '');
     }
 
     // Мои
@@ -1245,6 +1248,7 @@
     const n = shared.sheets.length + shared.items.length;
     if (!SHARED_ON) return '<span class="muted">Общая библиотека не подключена: в файле <code>config.js</code> не указан адрес Supabase.</span>';
     if (shared.status === 'loading') return '<span class="muted">Загружаю общую библиотеку…</span>';
+    if (shared.status === 'missing') return '<span class="bad">● общая библиотека ещё не настроена</span>: в Supabase нет таблицы <code>raskladka_formats</code> — владелец сайта должен один раз выполнить <code>supabase/shared-library.sql</code>. <button type="button" class="link-btn" data-lib="reload">проверить снова</button>';
     if (shared.status === 'error') return '<span class="bad">● нет связи с общей библиотекой</span> <button type="button" class="link-btn" data-lib="reload">повторить</button>';
     return `<span class="good">● общая библиотека подключена</span> · ${n} ${plural(n, 'формат', 'формата', 'форматов')} <button type="button" class="link-btn" data-lib="reload">обновить</button>`;
   }
