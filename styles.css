@@ -322,8 +322,35 @@ input.picker-input, input.lib-name {
 .lib-btn:hover { border-color: var(--accent); background: var(--accent-soft); }
 .lib-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .lib-btn svg { width: 14px; height: 14px; flex: none; }
-.lib-form { display: flex; gap: 6px; align-items: center; }
-.lib-form .input { flex: 1; }
+.lib-form { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.lib-form .input { flex: 1 1 100%; }
+.lib-form-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.shared-status { font-size: 12.5px; margin-bottom: 4px; }
+.shared-status code { font-size: 11.5px; }
+.link-btn {
+  border: 0; background: none; padding: 0 2px; cursor: pointer;
+  color: var(--accent); font: inherit; text-decoration: underline; text-underline-offset: 2px;
+}
+.dot-shared { background: var(--accent-soft); border-color: var(--accent); border-radius: 50%; }
+.dot-own { background: var(--panel-2); border-color: var(--line-strong); border-radius: 50%; }
+.lib-list {
+  list-style: none; margin: 0; padding: 0; max-height: 240px; overflow: auto;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2);
+}
+.lib-list li { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 10px; border-bottom: 1px solid var(--line); }
+.lib-list li:last-child { border-bottom: 0; }
+.li-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.li-name { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.li-meta { font-size: 11.5px; color: var(--muted); }
+.li-act { display: flex; gap: 2px; flex: none; }
+.li-act .icon-btn { font-size: 15px; font-weight: 600; }
+.lib-list .li-empty { color: var(--muted); font-size: 12.5px; padding: 8px 10px; }
+.trash { margin-top: 8px; font-size: 13px; }
+.trash summary { cursor: pointer; color: var(--muted); padding: 4px 0; }
+.trash summary:hover { color: var(--ink); }
+.trash .hint { margin: 4px 0 8px; }
+.group .lib-actions { margin-top: 10px; }
 .lib-name { padding: 7px 10px !important; }
 .btn.sm { padding: 7px 10px; font-size: 12.5px; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
@@ -333,6 +360,58 @@ input.picker-input, input.lib-name {
 .lib-stats { font-size: 13px; margin-bottom: 10px; }
 .lib-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .empty-note { margin: 0; padding: 4px 0; grid-column: 1 / -1; }
+
+/* ====== Несколько изделий ====== */
+.label.block { display: block; margin-top: 16px; }
+.hint.spaced-hint { margin-top: 12px; }
+.mitems { display: flex; flex-direction: column; gap: 8px; }
+.mitem {
+  padding: 8px 10px 10px; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--line-strong); border-left: 4px solid var(--cl);
+}
+.mitem-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.mitem-no {
+  display: inline-grid; place-items: center; min-width: 22px; height: 22px; padding: 0 4px; border-radius: 6px;
+  background: var(--c); color: #17222b; border: 1px solid var(--cl);
+  font: 600 12px/1 "IBM Plex Mono", ui-monospace, monospace;
+}
+input.mitem-name {
+  flex: 1; min-width: 0; padding: 4px 2px; outline: none;
+  border: 0; border-bottom: 1px dashed var(--line-strong); background: transparent; color: var(--ink);
+  font: 600 13.5px "IBM Plex Sans", system-ui, sans-serif;
+}
+input.mitem-name:focus { border-bottom-color: var(--accent); }
+input.mitem-name::placeholder { color: var(--faint); font-weight: 500; }
+.icon-btn {
+  display: grid; place-items: center; flex: none; width: 26px; height: 26px; padding: 0;
+  border: 0; border-radius: 6px; background: transparent; color: var(--faint); cursor: pointer;
+}
+.icon-btn svg { width: 15px; height: 15px; }
+.icon-btn:hover { background: var(--accent-soft); color: var(--accent); }
+.icon-btn.del:hover { background: var(--danger-soft); color: var(--danger); }
+.icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.mitem-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.mitems.manual .mitem-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.mf { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.mf > span:first-child { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mf .input input { font-size: 13px; padding: 6px 4px 6px 7px; }
+.mf-n { display: none; }
+.mitems.manual .mf-n { display: flex; }
+.madd { display: flex; gap: 6px; margin-top: 10px; align-items: stretch; }
+.madd .picker { flex: 1; min-width: 0; }
+.madd .btn { white-space: nowrap; }
+
+.table-wrap { overflow-x: auto; padding: 6px 16px 14px; }
+.mtable { width: 100%; border-collapse: collapse; font-size: 13px; }
+.mtable th {
+  padding: 6px 8px; text-align: left; white-space: nowrap;
+  color: var(--muted); font-size: 12px; font-weight: 500; border-bottom: 1px solid var(--line);
+}
+.mtable td { padding: 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.mtable .num { text-align: right; font-family: "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+.mtable tbody tr:last-child td { border-bottom: 0; }
+.mtable tfoot td { font-weight: 600; border-top: 1px solid var(--line-strong); border-bottom: 0; }
+.tdot { display: inline-block; width: 10px; height: 10px; margin-right: 7px; border-radius: 3px; border: 1px solid; vertical-align: -1px; }
 
 /* ====== Результаты ====== */
 .results { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
@@ -441,6 +520,12 @@ input.picker-input, input.lib-name {
   transition: opacity .2s, transform .2s;
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
+.toast { display: flex; align-items: center; gap: 12px; max-width: calc(100vw - 32px); }
+.toast.show.has-action { pointer-events: auto; }
+#toastAction {
+  border: 0; border-radius: 6px; padding: 5px 10px; cursor: pointer; flex: none;
+  background: var(--accent); color: var(--accent-ink); font: 600 12.5px "IBM Plex Sans", system-ui, sans-serif;
+}
 
 /* ====== Адаптив ====== */
 @media (max-width: 980px) {

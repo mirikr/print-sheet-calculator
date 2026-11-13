@@ -13,6 +13,14 @@
   const STORE_KEY = 'imposer-state-v1';
   const THEME_KEY = 'imposer-theme';
   const LIB_KEY = 'imposer-library-v1';
+  const MAX_DIV_MULTI = 4;  // для нескольких изделий перебираем деление до 4 × 4 (считать тяжелее)
+  const MULTI_CAP = 1200;   // максимум изделий на одном сборном листе
+  const MAX_ITEMS = 20;
+  const PALETTE = [
+    ['#d5ecf8', '#0a6a9e'], ['#fff0bf', '#a37800'], ['#d9f2df', '#2e7d4a'], ['#e9e1fb', '#6a4cb0'],
+    ['#ffe1cc', '#b5561b'], ['#fbdbe8', '#a8326a'], ['#d2f1ee', '#1f7a72'], ['#e1e6ee', '#4a5a72'],
+  ];
+  const ITEM_FIELDS = { w: 'ширина', h: 'высота', b: 'вылет', q: 'тираж', n: 'количество на листе' };
 
   const G_OWN = 'Мои форматы';
   const G_PRESS = 'Печатные форматы';
@@ -60,6 +68,7 @@
     gp: 0, md: 'sep', rot: 1,
     q: 1000, sp: 0,
     al: 'c', cm: 1, nm: 1, v: 'auto',
+    mm: 0, mq: 'a', mi: 'Карточка~50~40~2~1000~24|Визитка~90~50~2~500~10',
   };
 
   const NUM = {
@@ -328,8 +337,10 @@
     const common = radioVal('mode') === 'common';
     const dv = radioVal('dv') === '1';
     const mc = $('machineOn').checked;
+    const mm = radioVal('mm') === '1';
     const skip = new Set();
-    if (common) skip.add('gp');
+    if (common && !mm) skip.add('gp');
+    if (mm) ['iw', 'ih', 'bt', 'br', 'bb', 'bl', 'q'].forEach((k) => skip.add(k));
     if (dv) { skip.add('sw'); skip.add('sh'); } else DIVIDE_KEYS.forEach((k) => skip.add(k));
     if (dv && !mc) { skip.add('mw'); skip.add('mh'); }
 
@@ -349,12 +360,378 @@
     }
     p.dv = dv;
     p.mc = mc;
-    p.md = common ? 'common' : 'sep';
+    p.mm = mm;
+    p.mq = radioVal('mq') === 'm' ? 'm' : 'a';
+    p.items = mm ? readItems(errs, p.mq) : [];
+    p.md = common && !mm ? 'common' : 'sep';
     p.rot = $('rotate').checked;
     p.al = radioVal('align') === 'tl' ? 'tl' : 'c';
     p.cm = $('marks').checked;
     p.nm = $('numbers').checked;
     return { p, errs };
+  }
+
+  /* ---------- Несколько изделий: список в форме ---------- */
+
+  const ICON_STAR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/></svg>';
+  const ICON_X = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+
+  function readItems(errs, mq) {
+    return [...$('mItems').querySelectorAll('.mitem')].map((row, i) => {
+      const it = { i, name: row.querySelector('[data-f="name"]').value.trim() || `Изделие ${i + 1}` };
+      for (const f of ['w', 'h', 'b', 'q', 'n']) {
+        const el = row.querySelector(`[data-f="${f}"]`);
+        const v = parseNum(el.value);
+        const isInt = f === 'q' || f === 'n';
+        const skipIt = f === 'n' && mq !== 'm';
+        const ok = skipIt || (Number.isFinite(v) && v >= 0 && v <= (isInt ? 1e9 : 1e5) &&
+          ((f !== 'w' && f !== 'h') || v > 0) && (!isInt || Number.isInteger(v)));
+        el.closest('.input').classList.toggle('invalid', !ok);
+        if (!ok) errs.push(`${f}:${i}`);
+        it[f] = ok && Number.isFinite(v) ? v : 0;
+      }
+      [it.fill, it.line] = PALETTE[i % PALETTE.length];
+      return it;
+    });
+  }
+
+  const errName = (k) => {
+    if (!k.includes(':')) return NAMES[k];
+    const [f, i] = k.split(':');
+    return `${ITEM_FIELDS[f]} изделия ${Number(i) + 1}`;
+  };
+
+  // Сырые значения строк (как введены) — для сохранения в ссылке и перерисовки списка.
+  function collectItems() {
+    return [...$('mItems').querySelectorAll('.mitem')].map((row) => {
+      const o = {};
+      for (const f of ['name', 'w', 'h', 'b', 'q', 'n']) o[f] = row.querySelector(`[data-f="${f}"]`).value.trim();
+      return o;
+    });
+  }
+  const encItem = (s) => s.replace(/%/g, '%25').replace(/~/g, '%7E').replace(/\|/g, '%7C');
+  const encodeItems = (list) => list.map((o) => [encItem(o.name), ...['w', 'h', 'b', 'q', 'n'].map((f) => String(o[f]).replace(',', '.'))].join('~')).join('|');
+  function decodeItems(str) {
+    try {
+      return String(str || '').split('|').filter(Boolean).slice(0, MAX_ITEMS).map((part) => {
+        const [name, w, h, b, q, n] = part.split('~');
+        return { name: decodeURIComponent(name || ''), w, h, b, q, n };
+      });
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function renderItems(list) {
+    const val = (x, fallback) => {
+      const n = parseNum(x);
+      return Number.isFinite(n) ? toInput(n) : (x === undefined || x === '' ? fallback : esc(x));
+    };
+    const field = (f, label, v, mode) =>
+      `<label class="mf mf-${f}"><span>${label}</span><span class="input sm"><input data-f="${f}" inputmode="${mode}" spellcheck="false" value="${v}"></span></label>`;
+    $('mItems').innerHTML = list.length ? list.map((o, i) => {
+      const [fill, line] = PALETTE[i % PALETTE.length];
+      return `<div class="mitem" style="--c:${fill};--cl:${line}">
+        <div class="mitem-head">
+          <span class="mitem-no">${i + 1}</span>
+          <input class="mitem-name" data-f="name" maxlength="40" spellcheck="false" placeholder="Изделие ${i + 1}" value="${esc(o.name || '')}" aria-label="Название изделия ${i + 1}">
+          <button type="button" class="icon-btn" data-act="save" title="Сохранить формат в библиотеку" aria-label="Сохранить изделие ${i + 1} в библиотеку">${ICON_STAR}</button>
+          <button type="button" class="icon-btn del" data-act="del" title="Убрать изделие" aria-label="Убрать изделие ${i + 1}">${ICON_X}</button>
+        </div>
+        <div class="mitem-grid">
+          ${field('w', 'Ширина', val(o.w, '100'), 'decimal')}
+          ${field('h', 'Высота', val(o.h, '70'), 'decimal')}
+          ${field('b', 'Вылет', val(o.b, '2'), 'decimal')}
+          ${field('q', 'Тираж', val(o.q, '1000'), 'numeric')}
+          ${field('n', 'На листе', val(o.n, '1'), 'numeric')}
+        </div>
+      </div>`;
+    }).join('') : '<p class="muted empty-note">Список пуст — добавьте изделие поиском или кнопкой «+ Изделие».</p>';
+    $('mAdd').disabled = list.length >= MAX_ITEMS;
+  }
+
+  function addItem(o) {
+    const list = collectItems();
+    if (list.length >= MAX_ITEMS) { toast(`Не больше ${MAX_ITEMS} изделий на одном листе`); return; }
+    list.push(o);
+    renderItems(list);
+    const rows = $('mItems').querySelectorAll('.mitem');
+    const last = rows[rows.length - 1];
+    if (last) last.querySelector(o.name ? '[data-f="q"]' : '[data-f="name"]').focus();
+    schedule();
+  }
+
+  /* ---------- Несколько изделий: раскладка ---------- */
+
+  const PACK_SORTS = {
+    area: (a, b) => b.w * b.h - a.w * a.h,
+    maxside: (a, b) => Math.max(b.w, b.h) - Math.max(a.w, a.h) || Math.min(b.w, b.h) - Math.min(a.w, a.h),
+    h: (a, b) => b.h - a.h || b.w - a.w,
+    w: (a, b) => b.w - a.w || b.h - a.h,
+  };
+  const PACK_FULL = [];
+  for (const s of ['area', 'maxside', 'h', 'w']) {
+    for (const f of ['tl', 'baf', 'bssf']) {
+      for (const sp of ['sas', 'las', 'minas', 'maxas']) PACK_FULL.push([s, f, sp]);
+    }
+  }
+  const PACK_FAST = [['area', 'tl', 'sas'], ['area', 'baf', 'sas'], ['maxside', 'tl', 'las'], ['h', 'tl', 'sas'], ['w', 'tl', 'las'], ['area', 'bssf', 'minas']];
+
+  // Гильотинная упаковка: каждое размещённое изделие делит свободную область одним сквозным резом,
+  // поэтому готовый лист всегда можно разрезать на гильотине.
+  function packOnce(W, H, rects, rot, [sortKey, fitKey, splitKey]) {
+    const order = rects.slice().sort((a, b) => PACK_SORTS[sortKey](a, b) || a.ti - b.ti);
+    const free = [{ x: 0, y: 0, w: W, h: H }];
+    const out = [];
+    for (const r of order) {
+      let best = null;
+      const orients = rot && !near(r.w, r.h) ? [false, true] : [false];
+      for (let fi = 0; fi < free.length; fi++) {
+        const f = free[fi];
+        for (const ro of orients) {
+          const w = ro ? r.h : r.w, h = ro ? r.w : r.h;
+          if (w > f.w + EPS || h > f.h + EPS) continue;
+          const dw = f.w - w, dh = f.h - h;
+          let s1, s2 = Math.min(dw, dh);
+          if (fitKey === 'tl') s1 = f.y * 1e6 + f.x;            // ряды сверху вниз, слева направо
+          else if (fitKey === 'baf') s1 = f.w * f.h - w * h;   // наименьший остаток площади
+          else { s1 = Math.min(dw, dh); s2 = Math.max(dw, dh); } // наименьший остаток по короткой стороне
+          if (!best || s1 < best.s1 - EPS || (Math.abs(s1 - best.s1) <= EPS && s2 < best.s2)) best = { fi, ro, w, h, s1, s2 };
+        }
+      }
+      if (!best) return null;
+      const f = free[best.fi];
+      out.push({ ti: r.ti, ref: r, x: f.x, y: f.y, w: best.w, h: best.h, rot: best.ro });
+      const dw = f.w - best.w, dh = f.h - best.h;
+      let horiz;
+      if (splitKey === 'sas') horiz = dw <= dh;
+      else if (splitKey === 'las') horiz = dw > dh;
+      else if (splitKey === 'minas') horiz = best.w * dh > dw * best.h;
+      else horiz = best.w * dh <= dw * best.h;
+      const bottom = { x: f.x, y: f.y + best.h, w: horiz ? f.w : best.w, h: dh };
+      const right = { x: f.x + best.w, y: f.y, w: dw, h: horiz ? best.h : f.h };
+      free.splice(best.fi, 1);
+      if (bottom.w > EPS && bottom.h > EPS) free.push(bottom);
+      if (right.w > EPS && right.h > EPS) free.push(right);
+    }
+    return out;
+  }
+
+  // Блоки: экземпляры одного изделия ставятся сеткой cols × rows (+ остаток одним рядом) —
+  // так лист режется аккуратно. Для каждого изделия перебираем несколько форм сетки.
+  const BLOCK_CONFIGS = [
+    ['area', 'tl', 'sas'], ['area', 'baf', 'sas'], ['h', 'tl', 'sas'], ['w', 'tl', 'las'],
+    ['maxside', 'tl', 'las'], ['area', 'bssf', 'minas'], ['h', 'baf', 'las'], ['maxside', 'baf', 'sas'],
+  ];
+
+  function typeShapes(t, n, W, H, rot) {
+    const out = [];
+    for (const ro of rot && !near(t.cw, t.ch) ? [false, true] : [false]) {
+      const cw = ro ? t.ch : t.cw, ch = ro ? t.cw : t.ch;
+      const maxC = Math.min(n, Math.floor((W + EPS) / cw));
+      const maxR = Math.min(n, Math.floor((H + EPS) / ch));
+      if (maxC < 1 || maxR < 1) continue;
+      for (const cols of [maxC, Math.ceil(n / maxR), maxC - 1, Math.round(Math.sqrt((n * ch) / cw)), maxC - 2]) {
+        if (cols < 1 || cols > maxC) continue;
+        const rows = Math.floor(n / cols);
+        if (rows > maxR || out.some((s) => s.ro === ro && s.cols === cols)) continue;
+        out.push({ ro, cols, rows, rem: n - cols * rows });
+      }
+    }
+    return out;
+  }
+
+  function planBlocks(types, ns, plan) {
+    const rects = [];
+    plan.forEach((s) => {
+      const t = types[s.ti];
+      const cw = s.ro ? t.ch : t.cw, ch = s.ro ? t.cw : t.ch;
+      if (s.rows > 0) rects.push({ ti: s.ti, w: s.cols * cw, h: s.rows * ch, cols: s.cols, rows: s.rows, n: s.cols * s.rows, ro: s.ro });
+      if (s.rem > 0) rects.push({ ti: s.ti, w: s.rem * cw, h: ch, cols: s.rem, rows: 1, n: s.rem, ro: s.ro });
+    });
+    return rects;
+  }
+
+  // Все сочетания форм (декартово произведение), но не больше limit штук.
+  function blockPlans(types, ns, W, H, rot, limit) {
+    const lists = [];
+    types.forEach((t, ti) => {
+      if (!ns[ti]) return;
+      lists.push(typeShapes(t, ns[ti], W, H, rot).map((s) => ({ ...s, ti })));
+    });
+    if (!lists.length || lists.some((l) => !l.length)) return [];
+    let cut = Math.max(...lists.map((l) => l.length));
+    const total = (k) => lists.reduce((a, l) => a * Math.min(l.length, k), 1);
+    while (cut > 1 && total(cut) > limit) cut--;
+    const ls = lists.map((l) => l.slice(0, cut));
+    const plans = [];
+    const idx = ls.map(() => 0);
+    for (;;) {
+      plans.push(ls.map((l, i) => l[idx[i]]));
+      let i = 0;
+      while (i < idx.length && ++idx[i] >= ls[i].length) { idx[i] = 0; i++; }
+      if (i === idx.length) break;
+    }
+    // если сочетаний слишком много, добавим «одинаковые» планы: j-я форма для всех изделий
+    for (let j = cut; j < Math.max(...lists.map((l) => l.length)); j++) plans.push(lists.map((l) => l[Math.min(j, l.length - 1)]));
+    return plans;
+  }
+
+  // Разворачиваем размещённые блоки в отдельные изделия.
+  function expandPack(out, types) {
+    const list = [];
+    for (const o of out) {
+      const b = o.ref;
+      if (!b || b.n === undefined) { list.push(o); continue; }
+      const t = types[o.ti];
+      const ro = o.rot ? !b.ro : b.ro;
+      const cols = o.rot ? b.rows : b.cols;
+      const cw = ro ? t.ch : t.cw, ch = ro ? t.cw : t.ch;
+      for (let k = 0; k < b.n; k++) {
+        list.push({ ti: o.ti, x: o.x + (k % cols) * cw, y: o.y + Math.floor(k / cols) * ch, w: cw, h: ch, rot: ro });
+      }
+    }
+    return list;
+  }
+
+  function evalPack(list) {
+    let bw = 0, bh = 0;
+    const xs = new Set(), ys = new Set();
+    for (const o of list) {
+      bw = Math.max(bw, o.x + o.w);
+      bh = Math.max(bh, o.y + o.h);
+      xs.add(r3(o.x)); xs.add(r3(o.x + o.w));
+      ys.add(r3(o.y)); ys.add(r3(o.y + o.h));
+    }
+    return { list, bw, bh, lines: xs.size + ys.size };
+  }
+
+  const packCache = new Map();
+  function packBest(W, H, types, ns, rot, configs, wantBest) {
+    const key = [r3(W), r3(H), rot ? 1 : 0, wantBest ? 1 : 0, configs.length,
+      types.map((t, i) => `${r3(t.cw)}x${r3(t.ch)}:${ns[i]}`).join(',')].join('|');
+    if (packCache.has(key)) return packCache.get(key);
+    let result = null;
+    const rects = [];
+    let area = 0;
+    types.forEach((t, ti) => {
+      for (let k = 0; k < ns[ti]; k++) rects.push({ ti, w: t.cw, h: t.ch });
+      area += ns[ti] * t.cw * t.ch;
+    });
+    if (!rects.length) {
+      result = { list: [], bw: 0, bh: 0 };
+    } else if (rects.length <= MULTI_CAP && area <= W * H + EPS) {
+      // Из подходящих раскладок берём ту, где меньше разных линий реза: аккуратнее лист, быстрее резка.
+      const consider = (list) => {
+        const e = evalPack(list);
+        if (!result || e.lines < result.lines || (e.lines === result.lines && e.bw * e.bh < result.bw * result.bh - EPS)) result = e;
+      };
+      // 1) Каждое изделие — сеткой-блоком
+      const fast = configs.length < PACK_FULL.length;
+      const blockCfgs = fast ? BLOCK_CONFIGS.slice(0, 4) : BLOCK_CONFIGS;
+      blocks: for (const plan of blockPlans(types, ns, W, H, rot, fast ? 60 : 400)) {
+        const blocks = planBlocks(types, ns, plan);
+        for (const cfg of blockCfgs) {
+          const out = packOnce(W, H, blocks, rot, cfg);
+          if (!out) continue;
+          consider(expandPack(out, types));
+          if (!wantBest) break blocks;
+        }
+      }
+      // 2) По одному изделию — плотнее, но не так ровно
+      if (wantBest || !result) {
+        for (const cfg of configs) {
+          const out = packOnce(W, H, rects, rot, cfg);
+          if (!out) continue;
+          consider(expandPack(out, types));
+          if (!wantBest) break;
+        }
+      }
+    }
+    if (packCache.size > 4000) packCache.clear();
+    packCache.set(key, result);
+    return result;
+  }
+
+  // Сборный лист. Режим «подобрать»: ищем минимальное число листов S, при котором
+  // на один лист помещается ceil(тираж / S) каждого изделия.
+  function solveMulti(p, fast = false) {
+    const pa = { x: p.ml, y: p.mt, w: p.sw - p.ml - p.mr, h: p.sh - p.mt - p.mb };
+    const types = p.items.map((it) => ({ ...it, gw: it.w + 2 * it.b, gh: it.h + 2 * it.b }));
+    const res = { multi: true, pa, types, placed: null, ns: null, count: 0, S: null, bbox: null, problem: null };
+    if (!types.length) { res.problem = 'Добавьте хотя бы одно изделие.'; return res; }
+    if (pa.w <= EPS || pa.h <= EPS) { res.problem = 'Непечатаемые поля больше печатного листа — печатной области не остаётся.'; return res; }
+
+    const gap = p.gp;
+    const W = pa.w + gap, H = pa.h + gap; // зазор добавляем справа и снизу каждого изделия
+    types.forEach((t) => { t.cw = t.gw + gap; t.ch = t.gh + gap; });
+    const bad = types.filter((t) => !((t.cw <= W + EPS && t.ch <= H + EPS) || (p.rot && t.ch <= W + EPS && t.cw <= H + EPS)));
+    if (bad.length) {
+      res.problem = `Не помещается в печатную область: ${bad.map((t) => `«${t.name}» (${sz(t.gw, t.gh)} мм с вылетами)`).join(', ')}.`;
+      return res;
+    }
+
+    const configs = fast ? PACK_FAST : PACK_FULL;
+    const need = types.filter((t) => t.q > 0);
+    let ns, S, pack;
+    if (p.mq === 'm') {
+      ns = types.map((t) => t.n);
+      if (!ns.some((n) => n > 0)) { res.problem = 'Укажите, сколько штук каждого изделия ставить на лист.'; return res; }
+      pack = packBest(W, H, types, ns, p.rot, configs, !fast);
+      if (!pack) {
+        res.problem = 'Столько изделий не помещается на лист. Уменьшите количество «На листе» или переключитесь на «Подобрать».';
+        return res;
+      }
+      const missing = need.filter((t) => !t.n);
+      S = need.length && !missing.length ? Math.max(...need.map((t) => Math.ceil(t.q / t.n - EPS))) : null;
+      if (missing.length) res.problem = `У изделия ${missing.map((t) => `«${t.name}»`).join(', ')} есть тираж, но на листе 0 шт.`;
+    } else {
+      if (!need.length) { res.problem = 'Укажите тираж хотя бы для одного изделия.'; return res; }
+      const nsFor = (s) => types.map((t) => (t.q > 0 ? Math.ceil(t.q / s - EPS) : 0));
+      const feas = (s) => packBest(W, H, types, nsFor(s), p.rot, configs, false);
+      const maxQ = Math.max(...need.map((t) => t.q));
+      if (!feas(maxQ)) {
+        res.problem = 'Даже по одному экземпляру всех изделий не помещаются на лист. Уберите часть изделий или возьмите лист больше.';
+        return res;
+      }
+      const area = need.reduce((a, t) => a + t.q * t.cw * t.ch, 0);
+      let lo = Math.min(maxQ, Math.max(1, Math.ceil(area / (W * H) - EPS)));
+      let hi = maxQ;
+      while (lo < hi) {
+        const mid = Math.floor((lo + hi) / 2);
+        if (feas(mid)) hi = mid; else lo = mid + 1;
+      }
+      S = lo;
+      ns = nsFor(S);
+      pack = fast ? feas(S) : packBest(W, H, types, ns, p.rot, configs, true);
+    }
+
+    const center = p.al !== 'tl';
+    const bw = Math.max(0, pack.bw - gap), bh = Math.max(0, pack.bh - gap);
+    const ox = pa.x + (center ? (pa.w - bw) / 2 : 0);
+    const oy = pa.y + (center ? (pa.h - bh) / 2 : 0);
+    res.placed = pack.list.map((o) => {
+      const t = types[o.ti];
+      const x = ox + o.x, y = oy + o.y;
+      return {
+        type: t, rot: o.rot,
+        gross: { x, y, w: o.rot ? t.gh : t.gw, h: o.rot ? t.gw : t.gh },
+        trim: { x: x + t.b, y: y + t.b, w: o.rot ? t.h : t.w, h: o.rot ? t.w : t.h },
+      };
+    });
+    res.ns = ns;
+    res.count = ns.reduce((a, b) => a + b, 0);
+    res.S = S;
+    res.bbox = { x: ox, y: oy, w: bw, h: bh };
+    return res;
+  }
+
+  function multiSheets(p, res) {
+    if (!res.placed || !res.S) return null;
+    const total = Math.ceil(res.S * (1 + p.sp / 100) - 1e-9);
+    const printed = res.types.reduce((a, t, i) => a + res.S * res.ns[i], 0);
+    const over = res.types.reduce((a, t, i) => a + Math.max(0, res.S * res.ns[i] - t.q), 0);
+    return { sheets: res.S, total, extra: total - res.S, paper: Math.ceil(total / (p.parts || 1) - EPS), printed, over };
   }
 
   /* ---------- Библиотека форматов (localStorage) ---------- */
@@ -385,6 +762,122 @@
     return i >= 0;
   }
 
+  /* ---------- Общая библиотека (Supabase) ---------- */
+
+  const G_SHARED = 'Общая библиотека';
+  const CFG = window.RASKLADKA_CONFIG || {};
+  const SB_URL = String(CFG.supabaseUrl || '').trim().replace(/\/+$/, '');
+  const SB_KEY = String(CFG.supabaseAnonKey || '').trim();
+  const SHARED_ON = !!(SB_URL && SB_KEY);
+  const SB_TABLE = 'raskladka_formats';
+  const TRASH_DAYS = 30;
+  const shared = { sheets: [], items: [], trash: [], status: SHARED_ON ? 'loading' : 'off', error: '' };
+
+  async function sb(path, { method = 'GET', body, prefer } = {}) {
+    const headers = { apikey: SB_KEY, 'Content-Type': 'application/json' };
+    if (SB_KEY.startsWith('eyJ')) headers.Authorization = `Bearer ${SB_KEY}`; // старый anon-ключ в формате JWT
+    if (prefer) headers.Prefer = prefer;
+    const res = await fetch(`${SB_URL}/rest/v1/${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
+    if (!res.ok) {
+      let msg = String(res.status);
+      try { const j = await res.json(); msg += ` ${j.message || j.hint || ''}`; } catch (e) { /* без тела */ }
+      throw new Error(msg);
+    }
+    return res.status === 204 ? null : res.json();
+  }
+
+  function sharedEntry(r) {
+    const kind = r && (r.kind === 'items' || r.kind === 'sheets') ? r.kind : null;
+    if (!kind) return null;
+    const e = cleanEntry({ name: r.name, w: r.w, h: r.h, b: r.b }, kind === 'items');
+    return e && { ...e, id: r.id, kind, createdAt: r.created_at, deletedAt: r.deleted_at || null };
+  }
+
+  async function loadShared(quiet) {
+    if (!SHARED_ON) return;
+    try {
+      const since = new Date(Date.now() - TRASH_DAYS * 864e5).toISOString();
+      const filter = encodeURIComponent(`(deleted_at.is.null,deleted_at.gt.${since})`);
+      const rows = await sb(`${SB_TABLE}?select=id,kind,name,w,h,b,created_at,deleted_at&or=${filter}&order=created_at.desc&limit=2000`);
+      shared.sheets = [];
+      shared.items = [];
+      shared.trash = [];
+      for (const r of rows) {
+        const e = sharedEntry(r);
+        if (!e) continue;
+        if (e.deletedAt) shared.trash.push(e); else shared[e.kind].push(e);
+      }
+      shared.trash.sort((a, b) => (a.deletedAt < b.deletedAt ? 1 : -1));
+      shared.status = 'ok';
+      shared.error = '';
+    } catch (err) {
+      shared.status = 'error';
+      shared.error = err.message;
+      if (!quiet) toast('Общая библиотека недоступна — проверьте интернет');
+    }
+    refreshLibraries();
+  }
+
+  async function addShared(kind, entry) {
+    if (!SHARED_ON) return false;
+    const dup = shared[kind].find((e) => e.name.toLowerCase() === entry.name.toLowerCase() && sameSize(e, entry.w, entry.h));
+    if (dup) { toast(`«${entry.name}» уже есть в общей библиотеке`); return true; }
+    try {
+      const body = { kind, name: entry.name, w: entry.w, h: entry.h, b: kind === 'items' && entry.b ? entry.b : null };
+      const rows = await sb(SB_TABLE, { method: 'POST', body, prefer: 'return=representation' });
+      const e = sharedEntry(rows && rows[0]);
+      if (e) shared[kind].unshift(e);
+      refreshLibraries();
+      toast(`«${entry.name}» добавлен в общую библиотеку — его видят все`);
+      return true;
+    } catch (err) {
+      toast('Не удалось сохранить в общую библиотеку');
+      return false;
+    }
+  }
+
+  // Удаление из общей библиотеки — это перенос в корзину (deleted_at), его можно отменить.
+  async function setDeleted(e, deleted) {
+    const deletedAt = deleted ? new Date().toISOString() : null;
+    await sb(`${SB_TABLE}?id=eq.${encodeURIComponent(e.id)}`, { method: 'PATCH', body: { deleted_at: deletedAt } });
+    shared[e.kind] = shared[e.kind].filter((x) => x.id !== e.id);
+    shared.trash = shared.trash.filter((x) => x.id !== e.id);
+    const moved = { id: e.id, kind: e.kind, name: e.name, w: e.w, h: e.h, b: e.b, createdAt: e.createdAt, deletedAt };
+    if (deleted) shared.trash.unshift(moved); else shared[e.kind].unshift(moved);
+    refreshLibraries();
+  }
+  async function trashShared(e) {
+    try {
+      await setDeleted(e, true);
+      toast(`«${e.name}» убран в корзину общей библиотеки`, 'Отменить', () => restoreShared(e, true));
+    } catch (err) {
+      toast('Не удалось удалить: нет связи с общей библиотекой');
+    }
+  }
+  async function restoreShared(e, undo) {
+    try {
+      await setDeleted(e, false);
+      toast(undo ? 'Удаление отменено' : `«${e.name}» возвращён в общую библиотеку`);
+    } catch (err) {
+      toast('Не удалось вернуть: нет связи с общей библиотекой');
+    }
+  }
+
+  function removeOwn(kind, e) {
+    const idx = lib[kind].findIndex((x) => x.name === e.name);
+    if (idx < 0) return;
+    const [removed] = lib[kind].splice(idx, 1);
+    persistLib();
+    refreshLibraries();
+    toast(`«${removed.name}» удалён из ваших форматов`, 'Отменить', () => {
+      lib[kind].splice(Math.min(idx, lib[kind].length), 0, removed);
+      persistLib();
+      refreshLibraries();
+      toast('Удаление отменено');
+    });
+  }
+  const removeEntry = (kind, e) => (e.isShared ? trashShared(e) : removeOwn(kind, e));
+
   const sameSize = (e, w, h) => (near(e.w, w) && near(e.h, h)) || (near(e.w, h) && near(e.h, w));
   const entryLabel = (e) => (e.name ? `${e.name} — ${sz(e.w, e.h)} мм` : `${sz(e.w, e.h)} мм`);
   const bleedShort = (b) => (b.every((x) => near(x, b[0])) ? `вылет ${fmt(b[0])}` : `вылеты ${b.map(fmt).join('/')}`);
@@ -396,7 +889,7 @@
   const STAR_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/></svg>';
 
   // Выпадающий список с поиском: свои форматы + стандартные.
-  function createPicker(host, { kind, order, placeholder, getSize, onPick }) {
+  function createPicker(host, { kind, order, placeholder, getSize, onPick, addMode = false }) {
     const id = host.id;
     host.innerHTML = `
       <div class="picker-box">
@@ -416,9 +909,10 @@
 
     function entries() {
       const own = lib[kind].map((e) => ({ ...e, group: G_OWN, own: true }));
+      const common = shared[kind].map((e) => ({ ...e, group: G_SHARED, isShared: true }));
       let base = kind === 'items' ? ITEM_FORMATS : SHEET_FORMATS;
       if (order) base = [...base].sort((a, b) => order.indexOf(a.group) - order.indexOf(b.group));
-      return own.concat(base);
+      return own.concat(common, base);
     }
 
     function render(resetActive) {
@@ -437,7 +931,7 @@
         html += `<li class="picker-opt${i === active ? ' active' : ''}" role="option" id="${id}-o${i}" data-i="${i}" aria-selected="${sameSize(e, w, h)}">
           <span class="name">${esc(e.name || `${sz(e.w, e.h)} мм`)}</span>
           <span class="size">${e.name ? sz(e.w, e.h) : ''}${e.b ? `<small>${bleedShort(e.b)}</small>` : ''}</span>
-          ${e.own ? `<button type="button" class="picker-del" data-del="${i}" title="Удалить из библиотеки" aria-label="Удалить «${esc(e.name)}» из библиотеки">✕</button>` : ''}
+          ${e.own || e.isShared ? `<button type="button" class="picker-del" data-del="${i}" title="${e.isShared ? 'Убрать в корзину общей библиотеки (можно вернуть)' : 'Удалить из моих форматов'}" aria-label="Удалить «${esc(e.name)}»">✕</button>` : ''}
         </li>`;
       });
       if (!shown.length) {
@@ -508,12 +1002,7 @@
       const del = e.target.closest('.picker-del');
       if (del) {
         const en = shown[Number(del.dataset.del)];
-        if (en && window.confirm(`Удалить «${en.name}» из библиотеки?`)) {
-          lib[kind] = lib[kind].filter((x) => x.name !== en.name);
-          persistLib();
-          refreshLibraries();
-          toast(`«${en.name}» удалён из библиотеки`);
-        }
+        if (en) removeEntry(kind, en);
         return;
       }
       const li = e.target.closest('.picker-opt');
@@ -526,6 +1015,11 @@
     });
 
     function sync() {
+      if (addMode) { // поле «добавить изделие» всегда пустое, показывает подсказку
+        current = '';
+        if (document.activeElement !== input) input.value = '';
+        return;
+      }
       const [w, h] = getSize();
       const m = entries().find((e) => sameSize(e, w, h));
       current = m ? entryLabel(m) : (w > 0 && h > 0 ? `Свой формат — ${sz(w, h)} мм` : 'Свой формат');
@@ -544,8 +1038,11 @@
       <button type="button" class="lib-btn">${STAR_ICON}Сохранить в библиотеку</button>
       <div class="lib-form" hidden>
         <span class="input"><input type="text" class="lib-name" maxlength="60" data-nostate aria-label="Название формата для библиотеки"></span>
-        <button type="button" class="btn sm primary lib-ok">Сохранить</button>
-        <button type="button" class="btn sm lib-cancel" aria-label="Отмена">✕</button>
+        <div class="lib-form-actions">
+          ${SHARED_ON ? '<button type="button" class="btn sm primary lib-share" title="Формат увидят все, кто открывает сайт">В общую библиотеку</button>' : ''}
+          <button type="button" class="btn sm${SHARED_ON ? '' : ' primary'} lib-ok" title="Только в этом браузере">${SHARED_ON ? 'Только себе' : 'Сохранить'}</button>
+          <button type="button" class="btn sm lib-cancel" aria-label="Отмена">✕</button>
+        </div>
       </div>`;
     const btn = host.querySelector('.lib-btn');
     const box = host.querySelector('.lib-form');
@@ -561,10 +1058,14 @@
       name.placeholder = `Название, например «${noun} ${sz(e.w, e.h)}»`;
       name.focus();
     });
-    const save = () => {
+    const save = (toShared) => {
       const e = getEntry();
       if (!e) { toast('Сначала введите корректные размеры'); return; }
       const entry = cleanEntry({ ...e, name: name.value.trim() || `${noun} ${sz(e.w, e.h)}` }, kind === 'items');
+      if (toShared) {
+        addShared(kind, entry).then((ok) => { if (ok) hide(); });
+        return;
+      }
       const replaced = upsert(kind, entry);
       const ok = persistLib();
       refreshLibraries();
@@ -573,10 +1074,11 @@
         ? 'Не удалось сохранить: браузер запрещает хранить данные'
         : replaced ? `«${entry.name}» обновлён в библиотеке` : `«${entry.name}» сохранён — он будет здесь и при следующем заходе`);
     };
-    host.querySelector('.lib-ok').addEventListener('click', save);
+    host.querySelector('.lib-ok').addEventListener('click', () => save(false));
+    if (SHARED_ON) host.querySelector('.lib-share').addEventListener('click', () => save(true));
     host.querySelector('.lib-cancel').addEventListener('click', hide);
     name.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); save(); }
+      if (e.key === 'Enter') { e.preventDefault(); save(SHARED_ON); }
       if (e.key === 'Escape') { e.preventDefault(); hide(); }
     });
   }
@@ -615,6 +1117,15 @@
         schedule();
       },
     }),
+    createPicker($('multiPicker'), {
+      kind: 'items', placeholder: 'Добавить: визитка, A5, 90…', addMode: true,
+      getSize: () => [NaN, NaN],
+      onPick: (e) => {
+        const last = collectItems().pop();
+        const b = e.b ? Math.max(...e.b) : (last ? last.b : '2');
+        addItem({ name: e.name || '', w: e.w, h: e.h, b, q: last ? last.q : '1000', n: '1' });
+      },
+    }),
   ];
 
   createSaveBox($('sheetSave'), {
@@ -635,12 +1146,53 @@
     },
   });
 
+  const libRow = (e, kindLabel, note, buttons) => `<li>
+      <span class="li-main"><span class="li-name">${esc(e.name)}</span>
+        <span class="li-meta">${sz(e.w, e.h)} мм${e.b ? ` · ${bleedShort(e.b)}` : ''} · ${kindLabel}${note ? ` · ${note}` : ''}</span></span>
+      <span class="li-act">${buttons}</span>
+    </li>`;
+  const kindLabel = (kind) => (kind === 'items' ? 'изделие' : 'лист');
+
+  // Панель «Библиотека форматов»: общая, корзина, мои.
   function renderLibStats() {
-    const ns = lib.sheets.length, ni = lib.items.length;
-    $('libStats').innerHTML = ns || ni
-      ? `Сохранено: <b>${ns}</b> ${plural(ns, 'формат листа', 'формата листов', 'форматов листов')}, <b>${ni}</b> ${plural(ni, 'изделие', 'изделия', 'изделий')}.`
-      : 'Пока ничего не сохранено.';
-    $('libExport').disabled = !(ns || ni);
+    const status = $('sharedStatus');
+    const nShared = shared.sheets.length + shared.items.length;
+    if (!SHARED_ON) {
+      status.innerHTML = '<span class="muted">Общая библиотека не подключена: в файле <code>config.js</code> не указан адрес Supabase.</span>';
+    } else if (shared.status === 'loading') {
+      status.innerHTML = '<span class="muted">Загружаю общую библиотеку…</span>';
+    } else if (shared.status === 'error') {
+      status.innerHTML = '<span class="bad">● нет связи с общей библиотекой</span> <button type="button" class="link-btn" data-lib="reload">повторить</button>';
+    } else {
+      status.innerHTML = `<span class="good">● подключена</span> · ${nShared} ${plural(nShared, 'формат', 'формата', 'форматов')} <button type="button" class="link-btn" data-lib="reload">обновить</button>`;
+    }
+
+    const sharedRows = [...shared.sheets, ...shared.items]
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+      .map((e) => libRow(e, kindLabel(e.kind), '',
+        `<button type="button" class="icon-btn del" data-lib="trash" data-id="${esc(e.id)}" title="Убрать в корзину (можно вернуть)" aria-label="Убрать «${esc(e.name)}» в корзину">${ICON_X}</button>`));
+    $('sharedList').innerHTML = sharedRows.length ? sharedRows.join('')
+      : `<li class="li-empty">${SHARED_ON && shared.status === 'ok' ? 'Пока пусто — сохраните формат кнопкой «В общую библиотеку».' : '—'}</li>`;
+    $('sharedList').hidden = !SHARED_ON;
+
+    $('trashBox').hidden = !SHARED_ON;
+    $('trashSummary').textContent = `Корзина${shared.trash.length ? ` (${shared.trash.length})` : ''}`;
+    $('trashList').innerHTML = shared.trash.length
+      ? shared.trash.map((e) => {
+        const ago = Math.max(0, Math.floor((Date.now() - Date.parse(e.deletedAt)) / 864e5));
+        const left = Math.max(1, TRASH_DAYS - ago);
+        return libRow(e, kindLabel(e.kind), `${ago ? `удалён ${ago} дн. назад` : 'удалён сегодня'}, ещё ${left} дн.`,
+          `<button type="button" class="btn sm" data-lib="restore" data-id="${esc(e.id)}">Вернуть</button>`);
+      }).join('')
+      : '<li class="li-empty">Корзина пуста.</li>';
+
+    const own = [...lib.sheets.map((e, i) => [e, 'sheets', i]), ...lib.items.map((e, i) => [e, 'items', i])];
+    $('ownList').innerHTML = own.length
+      ? own.map(([e, kind, i]) => libRow(e, kindLabel(kind), '',
+        (SHARED_ON ? `<button type="button" class="icon-btn" data-lib="share" data-kind="${kind}" data-idx="${i}" title="Отправить в общую библиотеку" aria-label="Отправить «${esc(e.name)}» в общую библиотеку">↑</button>` : '') +
+        `<button type="button" class="icon-btn del" data-lib="del-own" data-kind="${kind}" data-idx="${i}" title="Удалить из моих форматов" aria-label="Удалить «${esc(e.name)}»">${ICON_X}</button>`)).join('')
+      : '<li class="li-empty">Пока пусто — сохраните формат кнопкой «Сохранить в библиотеку».</li>';
+    $('libExport').disabled = !own.length;
   }
   function refreshLibraries() {
     pickers.forEach((pk) => pk.refresh());
@@ -751,6 +1303,28 @@
         }
         o.push(`<g clip-path="url(#${idp}-clip)" stroke="${C.mark}" stroke-width="0.8" fill="none">${m.join('')}</g>`);
       }
+    }
+
+    // Сборный лист: у каждого изделия свой цвет и номер
+    if (res.multi && res.placed) {
+      const pl = res.placed;
+      const labels = allowLabels && pl.length <= MAX_LABELS;
+      for (const it of pl) {
+        if (it.type.b > EPS) o.push(`<rect x="${r3(it.gross.x)}" y="${r3(it.gross.y)}" width="${r3(it.gross.w)}" height="${r3(it.gross.h)}" fill="${C.bleed}"/>`);
+      }
+      const nums = [];
+      for (const it of pl) {
+        const t = it.type, tr = it.trim;
+        const tip = labels
+          ? `<title>${t.i + 1}. ${esc(t.name)} · ${sz(t.w, t.h)} мм${it.rot ? ', повёрнуто на 90°' : ''} · от левого верхнего угла листа до реза: X ${fmt(tr.x)}, Y ${fmt(tr.y)} мм</title>`
+          : '';
+        o.push(`<rect x="${r3(tr.x)}" y="${r3(tr.y)}" width="${r3(tr.w)}" height="${r3(tr.h)}" fill="${t.fill}" stroke="${t.line}" stroke-width="1" ${NS}>${tip}</rect>`);
+        const nfs = Math.min(Math.min(tr.w, tr.h) * 0.34, fs * 0.85);
+        if (showNums && labels && nfs >= fs * 0.3) {
+          nums.push(`<text x="${r3(tr.x + tr.w / 2)}" y="${r3(tr.y + tr.h / 2)}" font-size="${r3(nfs)}" fill="${t.line}">${t.i + 1}</text>`);
+        }
+      }
+      if (nums.length) o.push(`<g text-anchor="middle" dominant-baseline="central" font-weight="600" pointer-events="none">${nums.join('')}</g>`);
     }
 
     // Контур листа
@@ -865,9 +1439,51 @@
     }).join('');
   }
 
+  let divToken = 0;
+
+  // Для нескольких изделий перебор тяжелее — считаем после отрисовки основной схемы.
+  function renderDivOptionsMulti(p) {
+    const token = divToken;
+    $('divNote').textContent = p.mc
+      ? `меньше всего листов бумаги на все тиражи; только деления, которые входят в машину ${sz(p.mw, p.mh)} мм`
+      : 'меньше всего листов бумаги на все тиражи';
+    $('divOptions').innerHTML = '<p class="muted empty-note">Подбираю варианты деления…</p>';
+    setTimeout(() => {
+      if (token !== divToken) return;
+      const list = [];
+      for (let n = 1; n <= MAX_DIV_MULTI; n++) {
+        for (let m = 1; m <= MAX_DIV_MULTI; m++) {
+          const q = { ...p, dn: n, dm: m };
+          derivePress(q);
+          if (!q.fits) continue;
+          const r = solveMulti(q, true);
+          const s = multiSheets(q, r);
+          if (!s) continue;
+          list.push({ n, m, parts: n * m, sw: q.sw, sh: q.sh, count: r.count, sheets: s.total, paper: s.paper });
+        }
+      }
+      if (token !== divToken) return;
+      list.sort((a, b) => a.paper - b.paper || a.parts - b.parts || a.sheets - b.sheets);
+      const top = list.slice(0, 6);
+      if (!top.some((o) => o.n === p.dn && o.m === p.dm)) {
+        const cur = list.find((o) => o.n === p.dn && o.m === p.dm);
+        if (cur) top.push(cur);
+      }
+      $('divOptions').innerHTML = top.length
+        ? top.map((o, i) => `<button type="button" class="variant" data-n="${o.n}" data-m="${o.m}" aria-pressed="${o.n === p.dn && o.m === p.dm}">
+            <span class="v-title">${o.n} × ${o.m} = ${o.parts} ${partsWord(o.parts)}${i === 0 ? '<span class="badge">минимум</span>' : ''}</span>
+            <span class="v-count">${fmt(o.paper)}<small>${sheetsWord(o.paper)} бумаги</small></span>
+            <span class="v-formula">лист ${sz(o.sw, o.sh)} · ${fmt(o.count)} шт на нём · ${fmt(o.sheets)} печ. ${sheetsWord(o.sheets)}</span>
+          </button>`).join('')
+        : `<p class="muted empty-note">Ни одно деление до ${MAX_DIV_MULTI} × ${MAX_DIV_MULTI} не подходит${p.mc ? ' под формат машины' : ''}.</p>`;
+    }, 30);
+  }
+
   function renderDivOptions(p) {
+    divToken++;
     $('divPanel').hidden = !p.dv;
     if (!p.dv) return;
+    if (p.mm) { renderDivOptionsMulti(p); return; }
     const all = divisionOptions(p);
     const top = all.slice(0, 6);
     if (!top.some((o) => o.n === p.dn && o.m === p.dm)) {
@@ -889,6 +1505,121 @@
   function bleedText(p) {
     if (near(p.bt, p.br) && near(p.br, p.bb) && near(p.bb, p.bl)) return `${fmt(p.bt)} мм с каждой стороны`;
     return `сверху ${fmt(p.bt)} · справа ${fmt(p.br)} · снизу ${fmt(p.bb)} · слева ${fmt(p.bl)}`;
+  }
+
+  function baseSpecRows(p, pa) {
+    const rows = [];
+    if (p.dv) {
+      rows.push(['Лист бумаги', `${sz(p.pw, p.ph)} → ${p.dn} × ${p.dm} = ${p.parts} ${partsWord(p.parts)} по ${sz(p.cw, p.ch)}`]);
+      if (p.mc) {
+        rows.push(['Формат машины', `${sz(p.mw, p.mh)} — ${p.fits
+          ? 'печатный лист помещается'
+          : '<span class="bad">печатный лист не помещается</span>'}`]);
+      }
+      rows.push(['Печатный лист', `${sz(p.sw, p.sh)}${p.pieceRot ? ' <span class="muted">(часть повёрнута на 90° под машину)</span>' : ''}`]);
+    } else {
+      rows.push(['Печатный лист', `${sz(p.sw, p.sh)} <span class="muted">(ширина × длина)</span>`]);
+    }
+    rows.push(
+      ['Непечатаемые поля', `сверху ${fmt(p.mt)} · справа ${fmt(p.mr)} · снизу ${fmt(p.mb)} · слева ${fmt(p.ml)}`],
+      ['Печатная область', pa.w > 0 && pa.h > 0 ? sz(pa.w, pa.h) : '—'],
+    );
+    return rows;
+  }
+
+  function renderKpisMulti(p, res) {
+    const ok = !!res.placed;
+    const c = res.count;
+    setKpi('kPer', ok ? fmt(c) : '—',
+      ok ? `${res.types.length} ${plural(res.types.length, 'вид', 'вида', 'видов')}: ${res.ns.join(' + ')}` : 'не помещается');
+    $('kSheetsLabel').textContent = p.dv ? 'Печатных листов' : 'Листов на тираж';
+    const s = multiSheets(p, res);
+    if (s) {
+      setKpi('kSheets', `${fmt(s.total)}<small>${sheetsWord(s.total)}</small>`,
+        s.extra > 0 ? `${fmt(s.sheets)} + ${fmt(s.extra)} на приладку` : 'на все тиражи');
+      setKpi('kOver', s.over > 0 ? `+${fmt(s.over)}` : '0', `отпечатается ${fmt(s.printed)} шт`);
+    } else {
+      setKpi('kSheets', '—', ok ? 'укажите тиражи' : '');
+      setKpi('kOver', '—', '');
+    }
+    $('kPaperCard').hidden = !p.dv;
+    if (p.dv) {
+      setKpi('kPaper', s ? `${fmt(s.paper)}<small>${sheetsWord(s.paper)}</small>` : '—',
+        `${sz(p.pw, p.ph)} мм · ${fmt(c * p.parts)} шт с листа`);
+    }
+    const net = ok ? res.types.reduce((a, t, i) => a + res.ns[i] * t.w * t.h, 0) : 0;
+    const paArea = Math.max(res.pa.w, 0) * Math.max(res.pa.h, 0);
+    setKpi('kFill', `${nf1.format((net / (p.sw * p.sh)) * 100)}<small>%</small>`,
+      paArea > 0 ? `печатной области — ${nf1.format((net / paArea) * 100)} %` : '');
+    $('mbPer').textContent = ok ? fmt(c) : '—';
+    $('mbSheets').textContent = !s ? '' : p.dv
+      ? `${fmt(s.paper)} ${sheetsWord(s.paper)} бумаги`
+      : `${fmt(s.total)} ${sheetsWord(s.total)} на тираж`;
+  }
+
+  function renderMultiTable(p, res) {
+    const s = multiSheets(p, res);
+    $('multiNote').textContent = p.mq === 'm'
+      ? 'количество на листе задано вручную'
+      : 'подобрано так, чтобы все тиражи уложились в минимум листов';
+    const types = res.types || [];
+    const body = types.map((t, i) => {
+      const n = res.ns ? res.ns[i] : null;
+      const printed = s ? s.sheets * n : null;
+      const over = printed !== null ? printed - t.q : null;
+      return `<tr>
+        <td><span class="tdot" style="background:${t.fill};border-color:${t.line}"></span>${i + 1}. ${esc(t.name)}</td>
+        <td class="num">${sz(t.w, t.h)}</td>
+        <td class="num">${fmt(t.b)}</td>
+        <td class="num">${fmt(t.q)}</td>
+        <td class="num"><b>${n !== null ? fmt(n) : '—'}</b></td>
+        <td class="num">${printed !== null ? fmt(printed) : '—'}</td>
+        <td class="num">${over !== null ? (over > 0 ? `+${fmt(over)}` : '0') : '—'}</td>
+      </tr>`;
+    }).join('');
+    const sumQ = types.reduce((a, t) => a + t.q, 0);
+    const foot = types.length > 1 ? `<tfoot><tr>
+        <td>Всего</td><td></td><td></td>
+        <td class="num">${fmt(sumQ)}</td>
+        <td class="num">${res.placed ? fmt(res.count) : '—'}</td>
+        <td class="num">${s ? fmt(s.printed) : '—'}</td>
+        <td class="num">${s ? (s.over > 0 ? `+${fmt(s.over)}` : '0') : '—'}</td>
+      </tr></tfoot>` : '';
+    $('mTable').innerHTML = `<thead><tr>
+        <th>Изделие</th><th class="num">В обрез</th><th class="num">Вылет</th><th class="num">Тираж</th>
+        <th class="num">На листе</th><th class="num">Отпечатается</th><th class="num">Лишних</th>
+      </tr></thead><tbody>${body}</tbody>${foot}`;
+  }
+
+  function renderSpecsMulti(p, res) {
+    const pa = res.pa;
+    const rows = baseSpecRows(p, pa);
+    rows.push(['Изделия', res.types.map((t, i) => `${i + 1}. ${esc(t.name)} — ${sz(t.w, t.h)}, вылет ${fmt(t.b)}`).join('<br>')]);
+    rows.push(['Резка', `у каждого изделия своя обрезаемая часть (двойной рез)${p.gp > 0 ? `, зазор ${fmt(p.gp)}` : ''}; раскладка гильотинная`]);
+    rows.push(['Количество на листе', p.mq === 'm' ? 'задано вручную' : 'подобрано под тиражи — минимум листов на все изделия']);
+    if (res.placed) {
+      rows.push(['Схема раскладки', `<span class="em">${res.ns.map((n, i) => `${n} × №${i + 1}`).join(' + ')} = ${fmt(res.count)} шт</span>`]);
+      if (p.dv) rows.push(['С листа бумаги', `<span class="em">${p.parts} × ${fmt(res.count)} = ${fmt(p.parts * res.count)} шт</span>`]);
+      rows.push(['Габарит раскладки', `${sz(res.bbox.w, res.bbox.h)} с обрезаемой частью`]);
+      rows.push(['Свободно в печатной области', `по ширине ${fmt(pa.w - res.bbox.w)} · по длине ${fmt(pa.h - res.bbox.h)}`]);
+    }
+    const s = multiSheets(p, res);
+    if (s) {
+      rows.push(['Тираж', `${fmt(s.sheets)} ${sheetsWord(s.sheets)}` +
+        (s.extra > 0 ? ` + ${fmt(s.extra)} на приладку (${fmt(p.sp)} %) = ${fmt(s.total)} ${sheetsWord(s.total)}` : '') +
+        (p.dv ? ` → <span class="em">${fmt(s.paper)} ${sheetsWord(s.paper)} бумаги ${sz(p.pw, p.ph)}</span>` : '') +
+        ` · отпечатается ${fmt(s.printed)} шт`]);
+    }
+    $('specs').innerHTML = rows.map(([k, val]) => `<dt>${k}</dt><dd>${val}</dd>`).join('');
+  }
+
+  function setTypeLegend(res) {
+    const anchor = $('legendItem');
+    anchor.parentNode.querySelectorAll('.lt').forEach((n) => n.remove());
+    anchor.hidden = !!res;
+    if (!res || !res.types) return;
+    anchor.insertAdjacentHTML('afterend', res.types.map((t, i) =>
+      `<li class="lt"><span class="sw" style="background:${t.fill};border-color:${t.line}"></span>${i + 1}. ${esc(t.name)}</li>`).join(''));
   }
 
   function renderSpecs(p, res, lay) {
@@ -968,6 +1699,11 @@
 
     $('wholeBlock').hidden = p.dv;
     $('divideBlock').hidden = !p.dv;
+    $('singleBlock').hidden = p.mm;
+    $('multiBlock').hidden = !p.mm;
+    $('cutModeBlock').hidden = p.mm;
+    $('qtyField').hidden = p.mm;
+    $('mItems').classList.toggle('manual', p.mq === 'm');
     $('machineDims').classList.toggle('disabled', !p.mc);
     $('figures').classList.toggle('split', p.dv);
     $('parentPanel').hidden = !p.dv;
@@ -999,16 +1735,39 @@
 
     const results = $('results');
     if (errs.length) {
-      showAlert(`Проверьте значения: ${errs.map((k) => NAMES[k]).join(', ')}. Нужны числа не меньше нуля; размеры — больше нуля; тираж и деление — целые числа.`);
+      showAlert(`Проверьте значения: ${errs.map(errName).join(', ')}. Нужны числа не меньше нуля; размеры — больше нуля; тираж и деление — целые числа.`);
       results.classList.add('stale');
       return;
     }
     results.classList.remove('stale');
 
-    const res = compute(p);
     const machineProblem = p.dv && !p.fits
       ? `Печатный лист ${sz(p.sw, p.sh)} мм больше формата машины ${sz(p.mw, p.mh)} мм. Выберите другое деление — подходящие варианты показаны ниже.`
       : null;
+    $('variantsPanel').hidden = p.mm;
+    $('multiPanel').hidden = !p.mm;
+    if (p.mm) {
+      const mres = solveMulti(p);
+      lastMulti = mres;
+      showAlert(mres.problem || machineProblem);
+      renderKpisMulti(p, mres);
+      renderMultiTable(p, mres);
+      renderDivOptions(p);
+      drawMain(p, mres, null);
+      if (p.dv) drawParent(p, mres, null);
+      renderSpecsMulti(p, mres);
+      $('figCaption').textContent = mres.placed ? `сборный лист · ${fmt(mres.count)} шт на листе` : 'изделия не помещаются';
+      $('parentCaption').textContent = p.dv
+        ? `${p.parts} ${partsWord(p.parts)} по ${sz(p.cw, p.ch)} мм · ${fmt(mres.count * p.parts)} шт с листа`
+        : '';
+      $('legendRot').hidden = true;
+      $('legendMarks').hidden = true;
+      setTypeLegend(mres);
+      return;
+    }
+    setTypeLegend(null);
+
+    const res = compute(p);
     showAlert(res.problem || machineProblem);
     const lay = place(p, res);
     renderKpis(p, res);
@@ -1028,6 +1787,7 @@
     $('legendMarks').hidden = !p.cm;
   }
 
+  let lastMulti = null;
   let pending = false;
   function schedule() {
     if (pending) return;
@@ -1050,6 +1810,9 @@
     s.cm = +$('marks').checked;
     s.nm = +$('numbers').checked;
     s.v = variantPref;
+    s.mm = radioVal('mm') === '1' ? 1 : 0;
+    s.mq = radioVal('mq') === 'm' ? 'm' : 'a';
+    s.mi = encodeItems(collectItems());
     return s;
   }
 
@@ -1075,6 +1838,10 @@
     setRadio('mode', s.md === 'common' ? 'common' : 'sep');
     setRadio('align', s.al === 'tl' ? 'tl' : 'c');
     variantPref = ['auto', 'normal', 'rotated', 'mixed'].includes(s.v) ? s.v : 'auto';
+    setRadio('mm', bool(s.mm) ? '1' : '0');
+    setRadio('mq', s.mq === 'm' ? 'm' : 'a');
+    const items = decodeItems(s.mi);
+    renderItems(items.length || src.mi !== undefined ? items : decodeItems(DEFAULTS.mi));
   }
 
   function loadInitial() {
@@ -1122,6 +1889,11 @@
   form.addEventListener('change', (e) => {
     const t = e.target;
     if (t.hasAttribute('data-nostate')) return;
+    if (t.name === 'mq' && t.value === 'm' && lastMulti && lastMulti.ns) {
+      // Переход на ручной режим: начинаем с подобранных количеств, а не с пустого листа
+      const fields = $('mItems').querySelectorAll('[data-f="n"]');
+      lastMulti.ns.forEach((n, i) => { if (fields[i]) fields[i].value = String(n); });
+    }
     if (t.id === 'sym' && t.checked) { inp.mr.value = inp.ml.value; inp.mb.value = inp.mt.value; }
     if (t.id === 'bsym' && t.checked) { for (const k of ['br', 'bb', 'bl']) inp[k].value = inp.bt.value; }
     if (t === gross.w || t === gross.h) t.closest('.input').classList.remove('invalid');
@@ -1172,6 +1944,36 @@
     inp.dn.value = btn.dataset.n;
     inp.dm.value = btn.dataset.m;
     update();
+  });
+
+  $('mAdd').addEventListener('click', () => {
+    const last = collectItems().pop();
+    addItem(last ? { ...last, name: '', n: '1' } : { name: '', w: '100', h: '70', b: '2', q: '1000', n: '1' });
+  });
+
+  $('mItems').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-act]');
+    if (!btn) return;
+    const rows = [...$('mItems').querySelectorAll('.mitem')];
+    const idx = rows.indexOf(btn.closest('.mitem'));
+    const list = collectItems();
+    if (btn.dataset.act === 'del') {
+      list.splice(idx, 1);
+      renderItems(list);
+      schedule();
+      return;
+    }
+    if (btn.dataset.act === 'save') {
+      const it = list[idx];
+      const w = parseNum(it.w), h = parseNum(it.h), b = parseNum(it.b);
+      if (!validSize([w, h]) || !(b >= 0)) { toast('Сначала введите корректные размеры изделия'); return; }
+      const entry = cleanEntry({ name: it.name || `Изделие ${sz(w, h)}`, w, h, b: [b, b, b, b] }, true);
+      const replaced = upsert('items', entry);
+      const ok = persistLib();
+      refreshLibraries();
+      toast(!ok ? 'Не удалось сохранить: браузер запрещает хранить данные'
+        : replaced ? `«${entry.name}» обновлён в библиотеке` : `«${entry.name}» сохранён в библиотеку`);
+    }
   });
 
   $('btnReset').addEventListener('click', () => {
@@ -1285,13 +2087,50 @@
   });
 
   let toastTimer = 0;
-  function toast(text) {
+  let toastFn = null;
+  function toast(text, actionLabel, onAction) {
     const t = $('toast');
-    t.textContent = text;
+    const btn = $('toastAction');
+    $('toastText').textContent = text;
+    toastFn = onAction || null;
+    btn.hidden = !onAction;
+    if (onAction) btn.textContent = actionLabel;
+    t.classList.toggle('has-action', !!onAction);
     t.classList.add('show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
+    toastTimer = setTimeout(() => { t.classList.remove('show'); toastFn = null; }, onAction ? 8000 : 2600);
   }
+  $('toastAction').addEventListener('click', () => {
+    const fn = toastFn;
+    toastFn = null;
+    $('toast').classList.remove('show');
+    if (fn) fn();
+  });
+
+  // Кнопки в панели библиотеки
+  form.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-lib]');
+    if (!b) return;
+    const act = b.dataset.lib;
+    if (act === 'reload') {
+      shared.status = 'loading';
+      renderLibStats();
+      loadShared(false);
+      return;
+    }
+    if (act === 'trash' || act === 'restore') {
+      const en = [...shared.sheets, ...shared.items, ...shared.trash].find((x) => x.id === b.dataset.id);
+      if (!en) return;
+      b.disabled = true;
+      if (act === 'trash') trashShared(en); else restoreShared(en, false);
+      return;
+    }
+    const kind = b.dataset.kind;
+    const en = lib[kind] && lib[kind][Number(b.dataset.idx)];
+    if (!en) return;
+    if (act === 'share') { b.disabled = true; addShared(kind, en).finally(() => { b.disabled = false; }); }
+    if (act === 'del-own') removeOwn(kind, en);
+  });
 
   /* ---------- Старт ---------- */
 
@@ -1299,6 +2138,12 @@
   renderLibStats();
   update();
 
+  if (SHARED_ON) {
+    loadShared(true);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) loadShared(true); });
+    setInterval(() => { if (!document.hidden) loadShared(true); }, 120000);
+  }
+
   // Для проверки расчёта из консоли
-  window.__imposer = { compute, derivePress, divisionOptions, orient, fit, span, grid, mixed, place, read, lib };
+  window.__imposer = { compute, derivePress, divisionOptions, orient, fit, span, grid, mixed, place, read, lib, solveMulti, packOnce };
 })();

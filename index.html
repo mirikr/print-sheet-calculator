@@ -129,8 +129,14 @@
       </section>
 
       <section class="group">
-        <h2><span class="step">3</span>Изделие</h2>
-        <div class="field">
+        <h2><span class="step">3</span>Изделия</h2>
+        <div class="seg first" role="radiogroup" aria-label="Сколько видов изделий на листе">
+          <label><input type="radio" name="mm" value="0"><span>Одно изделие<small>одинаковые на листе</small></span></label>
+          <label><input type="radio" name="mm" value="1"><span>Несколько изделий<small>сборный лист</small></span></label>
+        </div>
+
+        <div id="singleBlock">
+        <div class="field spaced">
           <span class="label">Формат изделия</span>
           <div class="picker" id="itemPicker"></div>
         </div>
@@ -171,13 +177,32 @@
         </div>
         <p class="hint after">Можно ввести любой из размеров: если знаете размер до обреза, основная часть пересчитается сама.</p>
         <div class="lib-save" id="itemSave"></div>
+        </div>
 
-        <span class="label">Обрезаемая часть при раскладке</span>
+        <div id="multiBlock" hidden>
+          <p class="hint spaced-hint">Изделия разного размера на одном листе. У каждого свой размер в обрез, вылет с каждой стороны и тираж. Все размеры в мм.</p>
+          <div class="mitems" id="mItems"></div>
+          <div class="madd">
+            <div class="picker" id="multiPicker"></div>
+            <button type="button" class="btn sm" id="mAdd" title="Добавить изделие">+ Изделие</button>
+          </div>
+
+          <span class="label block">Сколько каждого ставить на лист</span>
+          <div class="seg" role="radiogroup" aria-label="Сколько каждого изделия ставить на лист">
+            <label><input type="radio" name="mq" value="a"><span>Подобрать<small>под тиражи, минимум листов</small></span></label>
+            <label><input type="radio" name="mq" value="m"><span>Задать вручную<small>шт на листе</small></span></label>
+          </div>
+          <p class="hint after">У каждого изделия своя обрезаемая часть (двойной рез). Раскладка режется на гильотине: каждый рез проходит через всю оставшуюся часть листа.</p>
+        </div>
+
+        <div id="cutModeBlock">
+        <span class="label block">Обрезаемая часть при раскладке</span>
         <div class="seg" role="radiogroup" aria-label="Обрезаемая часть при раскладке">
           <label><input type="radio" name="mode" value="sep"><span>У каждого изделия<small>двойной рез</small></span></label>
           <label><input type="radio" name="mode" value="common"><span>Общий рез<small>встык, вылет по краю</small></span></label>
         </div>
         <p class="hint after" id="modeHint"></p>
+        </div>
 
         <div class="row2" id="gapRow">
           <label class="field">
@@ -192,7 +217,7 @@
       <section class="group">
         <h2><span class="step">4</span>Тираж</h2>
         <div class="row2 tight">
-          <label class="field">
+          <label class="field" id="qtyField">
             <span class="label">Нужно изделий</span>
             <span class="input"><input id="qty" inputmode="numeric" spellcheck="false"><span class="unit">шт</span></span>
           </label>
@@ -215,9 +240,20 @@
       </section>
 
       <section class="group">
-        <h2><span class="step">★</span>Моя библиотека форматов</h2>
-        <p class="hint">Форматы, сохранённые кнопкой «Сохранить в библиотеку», хранятся в этом браузере и остаются при следующем заходе. Чтобы перенести их на другое устройство или передать коллеге, скачайте файл и загрузите его там.</p>
-        <div class="lib-stats" id="libStats"></div>
+        <h2><span class="step">★</span>Библиотека форматов</h2>
+        <div class="shared-status" id="sharedStatus"></div>
+
+        <h3 class="sub"><span class="dot dot-shared"></span>Общая <small>видна всем, кто открывает сайт</small></h3>
+        <ul class="lib-list" id="sharedList"></ul>
+        <details class="trash" id="trashBox">
+          <summary id="trashSummary">Корзина</summary>
+          <p class="hint">Удалённые из общей библиотеки форматы хранятся здесь 30 дней — любой может вернуть их обратно.</p>
+          <ul class="lib-list" id="trashList"></ul>
+        </details>
+
+        <h3 class="sub"><span class="dot dot-own"></span>Мои <small>только в этом браузере</small></h3>
+        <ul class="lib-list" id="ownList"></ul>
+        <p class="hint">Свои форматы можно перенести на другое устройство файлом или отправить в общую библиотеку кнопкой ↑.</p>
         <div class="lib-actions">
           <button type="button" class="btn" id="libExport">Скачать файл</button>
           <button type="button" class="btn" id="libImport">Загрузить файл</button>
@@ -260,12 +296,20 @@
         </div>
       </div>
 
-      <section class="panel variants-panel">
+      <section class="panel variants-panel" id="variantsPanel">
         <div class="panel-head">
           <h2>Варианты раскладки</h2>
           <span class="muted">нажмите на вариант, чтобы показать его на схеме</span>
         </div>
         <div class="variants" id="variants"></div>
+      </section>
+
+      <section class="panel" id="multiPanel" hidden>
+        <div class="panel-head">
+          <h2>Изделия на сборном листе</h2>
+          <span class="muted" id="multiNote"></span>
+        </div>
+        <div class="table-wrap"><table class="mtable" id="mTable"></table></div>
       </section>
 
       <section class="panel variants-panel" id="divPanel" hidden>
@@ -289,7 +333,7 @@
           <li><span class="sw sw-nonprint"></span>Непечатаемое поле</li>
           <li><span class="sw sw-pa"></span>Граница печатной области</li>
           <li><span class="sw sw-bleed"></span>Обрезаемая часть (вылет)</li>
-          <li><span class="sw sw-item"></span>Основная часть изделия</li>
+          <li id="legendItem"><span class="sw sw-item"></span>Основная часть изделия</li>
           <li id="legendRot"><span class="sw sw-rot"></span>Основная часть, поворот 90°</li>
           <li id="legendMarks"><span class="sw sw-mark"></span>Метки реза</li>
         </ul>
@@ -329,7 +373,8 @@
     <span class="mb-go">к схеме ↓</span>
   </button>
 
-  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"><span id="toastText"></span><button type="button" id="toastAction" hidden></button></div>
+  <script src="config.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
