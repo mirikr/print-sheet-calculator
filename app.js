@@ -4,6 +4,11 @@
 (() => {
   'use strict';
 
+  // Версия этой копии сайта — из адреса скрипта (app.js?v=8). Сравнивается с version.json на сервере.
+  const APP_VERSION = (() => {
+    try { return new URL(document.currentScript.src).searchParams.get('v') || ''; } catch (e) { return ''; }
+  })();
+
   const EPS = 1e-7;
   const MAX_DRAW = 20000;   // больше изделий — рисуем блоками, без отдельных прямоугольников
   const MAX_LABELS = 3000;  // больше — без номеров и всплывающих подсказок
@@ -2338,6 +2343,27 @@
   update();
   try { if (localStorage.getItem(VIEW_KEY) === 'lib') showView('lib'); } catch (e) { /* ignore */ }
 
+  // Уведомление о новой версии сайта
+  let updateDismissed = '';
+  async function checkUpdate() {
+    if (!APP_VERSION) return;
+    try {
+      const res = await fetch(`version.json?t=${Date.now()}`, { cache: 'no-store' });
+      if (!res.ok) return;
+      const { version } = await res.json();
+      const v = String(version || '');
+      if (v && v !== APP_VERSION && v !== updateDismissed) $('updateBar').hidden = false;
+    } catch (e) { /* офлайн — проверим позже */ }
+  }
+  $('updateBtn').addEventListener('click', () => location.reload());
+  $('updateClose').addEventListener('click', async () => {
+    $('updateBar').hidden = true;
+    try { updateDismissed = String((await (await fetch(`version.json?t=${Date.now()}`, { cache: 'no-store' })).json()).version); } catch (e) { /* ignore */ }
+  });
+  setTimeout(checkUpdate, 3000);
+  setInterval(() => { if (!document.hidden) checkUpdate(); }, 5 * 60 * 1000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkUpdate(); });
+
   if (SHARED_ON) {
     loadShared(true);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) loadShared(true); });
@@ -2345,5 +2371,5 @@
   }
 
   // Для проверки расчёта из консоли
-  window.__imposer = { compute, derivePress, divisionOptions, orient, fit, span, grid, mixed, place, read, lib, solveMulti, packOnce };
+  window.__imposer = { compute, derivePress, divisionOptions, orient, fit, span, grid, mixed, place, read, lib, solveMulti, packOnce, checkUpdate, APP_VERSION };
 })();

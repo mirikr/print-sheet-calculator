@@ -623,6 +623,16 @@ input.mitem-name::placeholder { color: var(--faint); font-weight: 500; }
   transition: opacity .2s, transform .2s;
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+.update-bar {
+  position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 30;
+  display: flex; align-items: center; gap: 10px; max-width: calc(100vw - 24px);
+  padding: 8px 8px 8px 14px; border-radius: 10px;
+  background: var(--ink); color: var(--bg); font-size: 13.5px; font-weight: 500;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .25);
+}
+.update-bar .icon-btn { color: var(--bg); opacity: .7; }
+.update-bar .icon-btn:hover { opacity: 1; background: rgba(127, 127, 127, .25); color: var(--bg); }
 .toast { display: flex; align-items: center; gap: 12px; max-width: calc(100vw - 32px); }
 .toast.show.has-action { pointer-events: auto; }
 #toastAction {
@@ -654,7 +664,7 @@ input.mitem-name::placeholder { color: var(--faint); font-weight: 500; }
 @media print {
   @page { size: A4; margin: 12mm; }
   body { background: #fff; color: #000; }
-  .controls, .top-actions, .variants-panel, .toast, .foot, .kbd-hint, .mobilebar, .tabs, .libview, .fmt-dialog { display: none !important; }
+  .controls, .top-actions, .variants-panel, .toast, .foot, .kbd-hint, .mobilebar, .tabs, .libview, .fmt-dialog, .update-bar { display: none !important; }
   .app[hidden] { display: block !important; }
   body { padding-bottom: 0; }
   .app, .figures { display: block; padding: 0; }
