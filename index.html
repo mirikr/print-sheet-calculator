@@ -11,7 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <!-- ?v= — номер версии. При каждом обновлении сайта увеличьте его здесь (3 места) и в version.json:
        браузеры возьмут свежие файлы, а у открытых вкладок появится уведомление «Обновить». -->
-  <link rel="stylesheet" href="styles.css?v=9">
+  <link rel="stylesheet" href="styles.css?v=10">
   <script>try { var t = localStorage.getItem('imposer-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}</script>
 </head>
 <body>
@@ -439,8 +439,13 @@
       <div class="tiles" id="tilesOwn"></div>
     </section>
 
-    <section class="lib-sec">
-      <h3>Стандартные форматы</h3>
+    <section class="lib-sec" id="secStd">
+      <div class="lib-sec-head">
+        <h3>Стандартные форматы <small id="stdCount"></small></h3>
+        <div class="lib-actions">
+          <button type="button" class="btn sm" id="stdToggle" aria-expanded="true" aria-controls="tilesStd">Свернуть</button>
+        </div>
+      </div>
       <div class="tiles" id="tilesStd"></div>
     </section>
 
@@ -504,7 +509,7 @@
     <button type="button" class="icon-btn" id="updateClose" aria-label="Скрыть уведомление" title="Скрыть">✕</button>
   </div>
 
-  <script src="config.js?v=9"></script>
-  <script src="app.js?v=9"></script>
+  <script src="config.js?v=10"></script>
+  <script src="app.js?v=10"></script>
 </body>
 </html>

@@ -1258,6 +1258,15 @@
 
   /* ---------- Раздел «Библиотека форматов»: плитки ---------- */
 
+  const STD_KEY = 'imposer-std-collapsed';
+  let stdCollapsed = false;
+  try { stdCollapsed = localStorage.getItem(STD_KEY) === '1'; } catch (e) { /* ignore */ }
+  $('stdToggle').addEventListener('click', () => {
+    stdCollapsed = !stdCollapsed;
+    try { localStorage.setItem(STD_KEY, stdCollapsed ? '1' : '0'); } catch (e) { /* ignore */ }
+    renderLibraryView();
+  });
+
   const STD_DESC = { [G_PRESS]: 'Стандартный печатный лист', [G_PAPER]: 'Стандартный лист бумаги', [G_ITEMS]: 'Стандартное изделие' };
   const dateRu = (iso) => { const d = new Date(iso); return Number.isNaN(+d) ? '' : d.toLocaleDateString('ru-RU'); };
 
@@ -1334,9 +1343,14 @@
       (own.length ? '' : filtering ? empty('Ничего не найдено.') : SHARED_ON ? empty('Пока пусто. Свои форматы сохраняются кнопкой «Сохранить в библиотеку» → «Только себе».') : '');
     $('libExport').disabled = !(lib.sheets.length + lib.items.length);
 
-    // Стандартные
+    // Стандартные — сворачиваются одной кнопкой; при поиске найденные показываем всегда
     const std = [...SHEET_FORMATS.map((e, i) => [e, 'sheets', i]), ...ITEM_FORMATS.map((e, i) => [e, 'items', i])].filter(([e, k]) => ok(e, k));
-    $('tilesStd').innerHTML = std.map(([e, k, i]) => tileHtml(e, k, 'std', i)).join('') || empty('Ничего не найдено.');
+    const stdHidden = stdCollapsed && !tokens.length;
+    $('tilesStd').hidden = stdHidden;
+    $('tilesStd').innerHTML = stdHidden ? '' : std.map(([e, k, i]) => tileHtml(e, k, 'std', i)).join('') || empty('Ничего не найдено.');
+    $('stdCount').textContent = `${std.length} ${plural(std.length, 'формат', 'формата', 'форматов')}${stdHidden ? ' · свёрнуто' : ''}`;
+    $('stdToggle').textContent = stdCollapsed ? 'Развернуть' : 'Свернуть';
+    $('stdToggle').setAttribute('aria-expanded', String(!stdHidden));
 
     // Корзина
     const trash = shared.trash.filter((e) => ok(e, e.kind));
