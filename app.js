@@ -74,6 +74,7 @@
     q: 1000, sp: 0,
     al: 'c', cm: 1, nm: 1, v: 'auto',
     mm: 0, mq: 'a', mi: 'Карточка~50~40~2~1000~24|Визитка~90~50~2~500~10',
+    pg: 16, pt: 100, bd: 'saddle', cv: 0,
   };
 
   const NUM = {
@@ -83,9 +84,10 @@
     iw: 'itemW', ih: 'itemH',
     bt: 'bT', br: 'bR', bb: 'bB', bl: 'bL',
     gp: 'gap', q: 'qty', sp: 'spoil',
+    pg: 'mpPages', pt: 'mpThick',
   };
-  const POSITIVE = new Set(['sw', 'sh', 'pw', 'ph', 'dn', 'dm', 'mw', 'mh', 'iw', 'ih']);
-  const INTEGER = new Set(['q', 'dn', 'dm']);
+  const POSITIVE = new Set(['sw', 'sh', 'pw', 'ph', 'dn', 'dm', 'mw', 'mh', 'iw', 'ih', 'pg', 'pt']);
+  const INTEGER = new Set(['q', 'dn', 'dm', 'pg']);
   const DIVIDE_KEYS = ['pw', 'ph', 'dn', 'dm', 'mw', 'mh'];
 
   const NAMES = {
@@ -98,6 +100,7 @@
     bt: 'обрезаемая часть сверху', br: 'обрезаемая часть справа',
     bb: 'обрезаемая часть снизу', bl: 'обрезаемая часть слева',
     gp: 'зазор', q: 'тираж', sp: 'запас на приладку',
+    pg: 'число страниц', pt: 'толщина листа блока',
   };
 
   // Цвета схемы — фиксированные, чтобы экспорт SVG выглядел одинаково в любой теме.
@@ -343,9 +346,12 @@
     const dv = radioVal('dv') === '1';
     const mc = $('machineOn').checked;
     const mm = radioVal('mm') === '1';
+    const pm = radioVal('mm') === '2';
+    const bd = ['saddle', 'perfect', 'spiral'].includes(radioVal('bd')) ? radioVal('bd') : 'saddle';
     const skip = new Set();
     if (common && !mm) skip.add('gp');
     if (mm) ['iw', 'ih', 'bt', 'br', 'bb', 'bl', 'q'].forEach((k) => skip.add(k));
+    if (!pm) { skip.add('pg'); skip.add('pt'); } else if (bd !== 'perfect') skip.add('pt');
     if (dv) { skip.add('sw'); skip.add('sh'); } else DIVIDE_KEYS.forEach((k) => skip.add(k));
     if (dv && !mc) { skip.add('mw'); skip.add('mh'); }
 
@@ -366,6 +372,9 @@
     p.dv = dv;
     p.mc = mc;
     p.mm = mm;
+    p.pm = pm;
+    p.bd = bd;
+    p.cv = bd === 'perfect' || radioVal('cv') === '1';
     p.mq = radioVal('mq') === 'm' ? 'm' : 'a';
     p.items = mm ? readItems(errs, p.mq) : [];
     p.md = common && !mm ? 'common' : 'sep';
@@ -737,6 +746,93 @@
     const printed = res.types.reduce((a, t, i) => a + res.S * res.ns[i], 0);
     const over = res.types.reduce((a, t, i) => a + Math.max(0, res.S * res.ns[i] - t.q), 0);
     return { sheets: res.S, total, extra: total - res.S, paper: Math.ceil(total / (p.parts || 1) - EPS), printed, over };
+  }
+
+  /* ---------- Многостраничное изделие (буклет, брошюра) ---------- */
+
+  const BIND = {
+    saddle: { name: 'скрепка', step: 4 },
+    perfect: { name: 'КБС (клеевое бесшвейное)', step: 2 },
+    spiral: { name: 'пружина', step: 2 },
+  };
+
+  // Скрепка: единица печати — разворот (2 страницы шириной), на листе 4 страницы (лицо + оборот).
+  // КБС и пружина: единица — лист блока (1 страница), на листе 2 страницы.
+  function mpSetup(p) {
+    const bind = BIND[p.bd];
+    const saddle = p.bd === 'saddle';
+    const pages = Math.max(bind.step, Math.ceil(p.pg / bind.step) * bind.step);
+    const leaves = pages / 2;
+    const spine = p.bd === 'perfect' ? (leaves * p.pt) / 1000 : 0;
+    const page = { w: p.iw, h: p.ih, t: p.bt, r: p.br, b: p.bb, l: p.bl };
+    let cover = null;
+    if (p.cv) {
+      if (saddle) cover = { ...page, w: 2 * p.iw, perCopy: 1, name: 'Разворот обложки' };
+      else if (p.bd === 'perfect') cover = { ...page, w: 2 * p.iw + spine, perCopy: 1, name: 'Обложка с корешком' };
+      else cover = { ...page, perCopy: 2, name: 'Лист обложки' };
+    }
+    return {
+      bind, saddle, pages, added: pages - p.pg, leaves, spine, page, cover,
+      unit: saddle ? { ...page, w: 2 * p.iw } : page,
+      unitsPerCopy: saddle ? pages / 4 : leaves,
+      unitTitle: saddle ? 'Разворот в обрез (2 страницы)' : 'Лист блока в обрез',
+      unitWord: (n) => (saddle ? plural(n, 'разворот', 'разворота', 'разворотов') : plural(n, 'лист', 'листа', 'листов')),
+    };
+  }
+  const asItem = (p, u, q) => ({ ...p, iw: u.w, ih: u.h, bt: u.t, br: u.r, bb: u.b, bl: u.l, q });
+
+  // Спуск полос: какие страницы на каком листе, с лица и с оборота.
+  function spreadsHtml(mp, realPages) {
+    const N = mp.pages, MAX = 120;
+    const pg = (n) => `<span class="pg${n > realPages ? ' blank' : ''}" title="${n > realPages ? 'пустая страница' : `страница ${n}`}">${n}</span>`;
+    const cov = (t) => `<span class="pg cov">${t}</span>`;
+    const card = (title, front, back, cls = '') =>
+      `<div class="spread${cls}"><div class="spread-h">${title}</div>
+        <div class="spread-row"><span class="side">лицо</span>${front}</div>
+        <div class="spread-row"><span class="side">оборот</span>${back}</div></div>`;
+    const cards = [];
+    if (mp.cover) {
+      if (mp.cover.perCopy === 2) {
+        cards.push(card('Обложка 1', cov('обл. 1'), cov('обл. 2'), ' is-cover'));
+        cards.push(card('Обложка 2', cov('обл. 3'), cov('обл. 4'), ' is-cover'));
+      } else {
+        const spine = mp.spine ? '<span class="pg cov spine" title="корешок">кор.</span>' : '';
+        cards.push(card('Обложка', cov('обл. 4') + spine + cov('обл. 1'), cov('обл. 2') + spine + cov('обл. 3'), ' is-cover'));
+      }
+    }
+    if (mp.saddle) {
+      const n = N / 4;
+      for (let i = 0; i < Math.min(n, MAX); i++) {
+        cards.push(card(`Лист ${i + 1}`, pg(N - 2 * i) + pg(2 * i + 1), pg(2 * i + 2) + pg(N - 2 * i - 1)));
+      }
+      if (n > MAX) cards.push(`<p class="muted tiles-empty">…и ещё ${n - MAX} листов</p>`);
+    } else {
+      for (let i = 0; i < Math.min(N / 2, MAX); i++) cards.push(card(`Лист ${i + 1}`, pg(2 * i + 1), pg(2 * i + 2), ' leaf'));
+      if (N / 2 > MAX) cards.push(`<p class="muted tiles-empty">…и ещё ${N / 2 - MAX} листов</p>`);
+    }
+    return cards.join('');
+  }
+
+  function renderMpPanel(p, mp, bs) {
+    $('mpNote').textContent = `${mp.pages} стр. · ${mp.bind.name} · ${fmt(p.copies)} экз.`;
+    const lines = [];
+    lines.push(`<b>Блок:</b> ${mp.pages} стр. = ${mp.unitsPerCopy} ${mp.unitWord(mp.unitsPerCopy)} ${sz(mp.unit.w, mp.unit.h)} мм на экземпляр` +
+      (bs ? ` · всего ${fmt(p.copies * mp.unitsPerCopy)} → <b>${fmt(bs.total)} ${sheetsWord(bs.total)}</b>` : ''));
+    if (mp.added) lines.push(`<span class="bad">Добавлено ${mp.added} ${plural(mp.added, 'пустая страница', 'пустые страницы', 'пустых страниц')}</span> — для «${mp.bind.name}» число страниц должно делиться на ${mp.bind.step}.`);
+    if (mp.spine) lines.push(`<b>Корешок:</b> ${fmt(mp.spine)} мм (${mp.leaves} листов × ${fmt(p.pt)} мкм) — ширина обложки ${fmt(mp.cover.w)} мм в обрез.`);
+    if (mp.cover) {
+      const c = mp.coverCalc;
+      lines.push(`<b>Обложка</b> (${mp.cover.name.toLowerCase()}, ${sz(mp.cover.w, mp.cover.h)} мм) печатается отдельно: ` +
+        (c && c.per ? `${fmt(c.per)} на листе → <b>${fmt(c.sheets.total)} ${sheetsWord(c.sheets.total)}</b>${p.dv ? ` (${fmt(c.sheets.paper)} ${sheetsWord(c.sheets.paper)} бумаги)` : ''}` : '<span class="bad">не помещается на печатный лист</span>'));
+    } else {
+      lines.push('<b>Обложка:</b> самообложка — первая и последняя страницы блока, та же бумага.');
+    }
+    if (mp.saddle && mp.pages > 64) lines.push('<span class="muted">Для скрепки больше 64 страниц учитывайте выталкивание внутренних разворотов, а больше ~96 страниц обычно делают КБС.</span>');
+    $('mpSummary').innerHTML = lines.map((l) => `<p>${l}</p>`).join('');
+    $('mpSpreadsNote').textContent = mp.saddle
+      ? 'скрепка: листы вкладываются друг в друга и сгибаются пополам'
+      : 'листы блока идут по порядку; нечётная страница — с лица';
+    $('mpSpreads').innerHTML = spreadsHtml(mp, p.pg);
   }
 
   /* ---------- Библиотека форматов (localStorage) ---------- */
@@ -1344,6 +1440,11 @@
               ? `<title>№ ${n} · ${sz(bo.w, bo.h)} мм${bo.rotated ? ', повёрнуто на 90°' : ''} · от левого верхнего угла листа до реза: X ${fmt(x)}, Y ${fmt(y)} мм</title>`
               : '';
             o.push(`<rect x="${r3(x)}" y="${r3(y)}" width="${r3(bo.w)}" height="${r3(bo.h)}" fill="${fill}" stroke="${line}" stroke-width="1" ${NS}>${tip}</rect>`);
+            if (p.mp && p.mp.saddle) { // линия сгиба посередине разворота
+              o.push(bo.rotated
+                ? `<line x1="${r3(x)}" y1="${r3(y + bo.h / 2)}" x2="${r3(x + bo.w)}" y2="${r3(y + bo.h / 2)}" stroke="${line}" stroke-width="1" stroke-dasharray="4 3" ${NS}/>`
+                : `<line x1="${r3(x + bo.w / 2)}" y1="${r3(y)}" x2="${r3(x + bo.w / 2)}" y2="${r3(y + bo.h)}" stroke="${line}" stroke-width="1" stroke-dasharray="4 3" ${NS}/>`);
+            }
             if (showNum) {
               nums.push(`<text x="${r3(x + bo.w / 2)}" y="${r3(y + bo.h / 2)}" font-size="${r3(nfs)}" fill="${bo.rotated ? C.numRot : C.num}">${n}</text>`);
             }
@@ -1706,10 +1807,19 @@
     } else {
       rows.push(['Печатный лист', `${sz(p.sw, p.sh)} <span class="muted">(ширина × длина)</span>`]);
     }
+    const mp = p.mp;
+    if (mp) {
+      rows.push(['Многостраничное изделие', `${sz(mp.page.w, mp.page.h)} · ${mp.pages} стр. · ${mp.bind.name}` +
+        `${mp.cover ? ' · отдельная обложка' : mp.saddle || p.bd === 'spiral' ? ' · самообложка' : ''}`]);
+      rows.push(['На один экземпляр', `${mp.unitsPerCopy} ${mp.unitWord(mp.unitsPerCopy)}` +
+        (mp.saddle ? ' (по 4 страницы: 2 с лица, 2 с оборота)' : ' (по 2 страницы: лицо и оборот)') +
+        (mp.cover ? ` + ${mp.cover.perCopy === 2 ? '2 листа обложки' : '1 обложка'}` : '')]);
+      if (mp.spine) rows.push(['Корешок', `${fmt(mp.spine)} мм = ${mp.leaves} ${plural(mp.leaves, 'лист', 'листа', 'листов')} × ${fmt(p.pt)} мкм`]);
+    }
     rows.push(
       ['Непечатаемые поля', `сверху ${fmt(p.mt)} · справа ${fmt(p.mr)} · снизу ${fmt(p.mb)} · слева ${fmt(p.ml)}`],
       ['Печатная область', pa.w > 0 && pa.h > 0 ? sz(pa.w, pa.h) : '—'],
-      ['Основная часть изделия', sz(p.iw, p.ih)],
+      [mp ? mp.unitTitle : 'Основная часть изделия', sz(p.iw, p.ih)],
       ['Обрезаемая часть', bleedText(p)],
       ['Размер до обреза', sz(p.iw + p.bl + p.br, p.ih + p.bt + p.bb)],
       ['Резка', p.md === 'common'
@@ -1735,10 +1845,19 @@
 
     const s = sheetsFor(v.count, p);
     if (s) {
-      rows.push(['Тираж', `${fmt(p.q)} шт → ${fmt(s.sheets)} ${sheetsWord(s.sheets)}` +
+      const head = mp
+        ? `${fmt(p.copies)} экз. × ${mp.unitsPerCopy} = ${fmt(p.q)} ${mp.unitWord(p.q)}`
+        : `${fmt(p.q)} шт`;
+      rows.push([mp ? 'Тираж блока' : 'Тираж', `${head} → ${fmt(s.sheets)} ${sheetsWord(s.sheets)}` +
         (s.extra > 0 ? ` + ${fmt(s.extra)} на приладку (${fmt(p.sp)} %) = ${fmt(s.total)} ${sheetsWord(s.total)}` : '') +
         (p.dv ? ` → <span class="em">${fmt(s.paper)} ${sheetsWord(s.paper)} бумаги ${sz(p.pw, p.ph)}</span>` : '') +
-        ` · отпечатается ${fmt(s.printed)} шт`]);
+        ` · отпечатается ${fmt(s.printed)} ${mp ? mp.unitWord(s.printed) : 'шт'}`]);
+    }
+    if (mp && mp.coverCalc) {
+      const c = mp.coverCalc;
+      rows.push(['Тираж обложки', c.sheets
+        ? `${fmt(c.need)} ${mp.cover.perCopy === 2 ? 'листов обложки' : plural(c.need, 'обложка', 'обложки', 'обложек')} ${sz(mp.cover.w, mp.cover.h)} мм · ${fmt(c.per)} на листе → ${fmt(c.sheets.total)} ${sheetsWord(c.sheets.total)} отдельной бумаги`
+        : 'обложка не помещается на печатный лист']);
     }
 
     $('specs').innerHTML = rows.map(([k, val]) => `<dt>${k}</dt><dd>${val}</dd>`).join('');
@@ -1771,8 +1890,26 @@
     $('divideBlock').hidden = !p.dv;
     $('singleBlock').hidden = p.mm;
     $('multiBlock').hidden = !p.mm;
+    $('mpBlock').hidden = !p.pm;
     $('cutModeBlock').hidden = p.mm;
     $('qtyField').hidden = p.mm;
+    $('qtyLabel').textContent = p.pm ? 'Экземпляров' : 'Нужно изделий';
+    $('itemFormatLabel').textContent = p.pm ? 'Формат страницы' : 'Формат изделия';
+    $('itemSubTitle').textContent = p.pm ? 'Страница' : 'Основная часть';
+    $('itemSubHint').textContent = p.pm ? 'готовый размер страницы после резки' : 'готовое изделие после резки';
+    if (p.pm) {
+      $('mpThickField').hidden = p.bd !== 'perfect';
+      $('mpCoverBlock').hidden = p.bd === 'perfect';
+      const step = BIND[p.bd].step;
+      const pages = p.pg > 0 ? Math.max(step, Math.ceil(p.pg / step) * step) : 0;
+      const spine = p.bd === 'perfect' && p.pg > 0 && p.pt > 0 ? (pages / 2) * p.pt / 1000 : 0;
+      $('mpHint').innerHTML = (pages && pages !== p.pg
+        ? `<span class="bad">Для «${BIND[p.bd].name}» нужно кратно ${step}: будет ${pages} стр. (${pages - p.pg} пустых).</span> `
+        : '') +
+        (p.bd === 'saddle' ? 'Печатаются развороты: на каждом листе 4 страницы — по 2 с лица и оборота.'
+          : p.bd === 'perfect' ? `Блок печатается листами, обложка всегда отдельная, с корешком${spine ? ` ≈ ${fmt(spine)} мм` : ''}. Офсет 80 г ≈ 100 мкм, мелованная 115 г ≈ 90 мкм.`
+            : 'Блок печатается листами: на каждом листе 2 страницы — лицо и оборот.');
+    }
     $('mItems').classList.toggle('manual', p.mq === 'm');
     $('machineDims').classList.toggle('disabled', !p.mc);
     $('figures').classList.toggle('split', p.dv);
@@ -1816,6 +1953,9 @@
       : null;
     $('variantsPanel').hidden = p.mm;
     $('multiPanel').hidden = !p.mm;
+    $('mpPanel').hidden = !p.pm;
+    $('kPerLabel').textContent = 'Изделий на листе';
+    $('kOverLabel').textContent = 'Лишние изделия';
     if (p.mm) {
       const mres = solveMulti(p);
       lastMulti = mres;
@@ -1832,29 +1972,65 @@
         : '';
       $('legendRot').hidden = true;
       $('legendMarks').hidden = true;
+      $('legendFold').hidden = true;
       setTypeLegend(mres);
       return;
     }
     setTypeLegend(null);
 
-    const res = compute(p);
-    showAlert(res.problem || machineProblem);
-    const lay = place(p, res);
-    renderKpis(p, res);
-    renderVariants(p, res);
-    renderDivOptions(p);
-    drawMain(p, res, lay);
-    if (p.dv) drawParent(p, res, lay);
-    renderSpecs(p, res, lay);
+    // Многостраничное: раскладываем единицу печати (разворот или лист блока) как одно изделие,
+    // тираж = экземпляры × единиц на экземпляр. Обложку считаем отдельно.
+    let q = p;
+    let mp = null;
+    if (p.pm) {
+      mp = mpSetup(p);
+      q = asItem(p, mp.unit, p.q * mp.unitsPerCopy);
+      q.copies = p.q;
+      q.mp = mp;
+      if (mp.cover) {
+        const pc = asItem(p, mp.cover, p.q * mp.cover.perCopy);
+        const per = compute(pc, 'auto').best.count;
+        mp.coverCalc = { per, need: pc.q, sheets: sheetsFor(per, pc) };
+      }
+    }
 
+    const res = compute(q);
+    showAlert(res.problem || machineProblem);
+    const lay = place(q, res);
+    renderKpis(q, res);
+    renderVariants(q, res);
+    renderDivOptions(q);
+    drawMain(q, res, lay);
+    if (q.dv) drawParent(q, res, lay);
+    renderSpecs(q, res, lay);
+
+    const unitShort = mp ? (mp.saddle ? 'разворотов' : 'листов блока') : 'шт';
     $('figCaption').textContent = res.chosen.count
-      ? `${res.chosen.title.toLowerCase()} · ${fmt(res.chosen.count)} шт на листе`
+      ? `${res.chosen.title.toLowerCase()} · ${fmt(res.chosen.count)} ${unitShort} на листе`
       : 'изделие не помещается';
-    $('parentCaption').textContent = p.dv
-      ? `${p.parts} ${partsWord(p.parts)} по ${sz(p.cw, p.ch)} мм · ${fmt(res.chosen.count * p.parts)} шт с листа`
+    $('parentCaption').textContent = q.dv
+      ? `${q.parts} ${partsWord(q.parts)} по ${sz(q.cw, q.ch)} мм · ${fmt(res.chosen.count * q.parts)} ${unitShort} с листа`
       : '';
     $('legendRot').hidden = !res.chosen.blocks.some((b) => b.o.rotated);
-    $('legendMarks').hidden = !p.cm;
+    $('legendMarks').hidden = !q.cm;
+    $('legendFold').hidden = !(mp && mp.saddle);
+
+    if (mp) {
+      const bs = sheetsFor(res.chosen.count, q);
+      renderMpPanel(q, mp, bs);
+      $('kPerLabel').textContent = mp.saddle ? 'Разворотов на листе' : 'Листов блока на листе';
+      $('kOverLabel').textContent = mp.saddle ? 'Лишние развороты' : 'Лишние листы блока';
+      if (res.chosen.count) {
+        $('kPerSub').textContent = `раскладка ${formula(res.chosen)} · на экз. ${mp.unitsPerCopy} ${mp.unitWord(mp.unitsPerCopy)}`;
+      }
+      if (bs) {
+        $('kSheetsLabel').textContent = mp.cover ? 'Листов на блоки' : (q.dv ? 'Печатных листов' : 'Листов на тираж');
+        const c = mp.coverCalc;
+        $('kSheetsSub').textContent = `${fmt(q.copies)} экз. по ${mp.pages} стр.` +
+          (c && c.sheets ? ` · + ${fmt(c.sheets.total)} ${sheetsWord(c.sheets.total)} на обложки` : '');
+        $('kOverSub').textContent = `отпечатается ${fmt(bs.printed)} ${mp.unitWord(bs.printed)}`;
+      }
+    }
   }
 
   let lastMulti = null;
@@ -1880,7 +2056,9 @@
     s.cm = +$('marks').checked;
     s.nm = +$('numbers').checked;
     s.v = variantPref;
-    s.mm = radioVal('mm') === '1' ? 1 : 0;
+    s.mm = Number(radioVal('mm') || 0);
+    s.bd = radioVal('bd') || 'saddle';
+    s.cv = radioVal('cv') === '1' ? 1 : 0;
     s.mq = radioVal('mq') === 'm' ? 'm' : 'a';
     s.mi = encodeItems(collectItems());
     return s;
@@ -1908,7 +2086,9 @@
     setRadio('mode', s.md === 'common' ? 'common' : 'sep');
     setRadio('align', s.al === 'tl' ? 'tl' : 'c');
     variantPref = ['auto', 'normal', 'rotated', 'mixed'].includes(s.v) ? s.v : 'auto';
-    setRadio('mm', bool(s.mm) ? '1' : '0');
+    setRadio('mm', ['0', '1', '2'].includes(String(s.mm)) ? String(s.mm) : '0');
+    setRadio('bd', ['saddle', 'perfect', 'spiral'].includes(s.bd) ? s.bd : 'saddle');
+    setRadio('cv', bool(s.cv) ? '1' : '0');
     setRadio('mq', s.mq === 'm' ? 'm' : 'a');
     const items = decodeItems(s.mi);
     renderItems(items.length || src.mi !== undefined ? items : decodeItems(DEFAULTS.mi));

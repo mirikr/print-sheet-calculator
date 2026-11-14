@@ -464,6 +464,37 @@ body.view-lib .mobilebar { display: none !important; }
 .lib-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .empty-note { margin: 0; padding: 4px 0; grid-column: 1 / -1; }
 
+/* ====== Многостраничное изделие ====== */
+.seg.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.seg.three span { padding: 7px 4px; font-size: 12.5px; }
+.seg.three small { font-size: 10.5px; }
+.dot-pages { background: var(--c-item); border-color: var(--c-item-line); box-shadow: 2px -2px 0 -0.5px var(--c-item-line); }
+#mpBlock .row2.tight { margin-top: 0; }
+.mp-summary { padding: 8px 16px 4px; font-size: 13.5px; }
+.mp-summary p { margin: 6px 0; }
+.panel-head.sub-head { padding-top: 6px; }
+.spreads {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px;
+  padding: 10px 16px 16px; max-height: 520px; overflow: auto;
+}
+.spread {
+  padding: 8px 10px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--line);
+  font-size: 12px;
+}
+.spread.is-cover { border-color: var(--c-rot-line); background: color-mix(in srgb, var(--c-rot) 22%, var(--panel-2)); }
+.spread-h { font-weight: 600; margin-bottom: 6px; font-size: 12.5px; }
+.spread-row { display: flex; align-items: center; gap: 4px; margin-top: 4px; }
+.spread-row .side { width: 50px; color: var(--muted); flex: none; }
+.pg {
+  display: inline-grid; place-items: center; min-width: 34px; height: 30px; padding: 0 4px;
+  background: #fff; color: #17222b; border: 1px solid #9aa3ad; border-radius: 2px;
+  font: 600 12px "IBM Plex Mono", ui-monospace, monospace;
+}
+.spread:not(.leaf) .spread-row .pg + .pg { margin-left: -5px; } /* половинки разворота встык по сгибу */
+.pg.blank { color: #9aa3ad; border-style: dashed; background: #f6f7f8; }
+.pg.cov { background: var(--c-rot); border-color: var(--c-rot-line); font-size: 10.5px; }
+.pg.cov.spine { min-width: 26px; font-size: 9.5px; background: #f3e3a6; }
+
 /* ====== Несколько изделий ====== */
 .label.block { display: block; margin-top: 16px; }
 .hint.spaced-hint { margin-top: 12px; }
@@ -605,6 +636,7 @@ input.mitem-name::placeholder { color: var(--faint); font-weight: 500; }
 .sw-rot { background: var(--c-rot); border-color: var(--c-rot-line); }
 .sw-mark { height: 0; border: 0; border-top: 1.5px solid var(--ink); border-radius: 0; }
 .sw-cut { height: 0; border: 0; border-top: 2px dashed var(--magenta); border-radius: 0; }
+.sw-fold { height: 0; border: 0; border-top: 1.5px dashed var(--c-item-line); border-radius: 0; }
 .sw-paper { background: #fff; border-color: #7d8690; }
 
 .specs { display: grid; grid-template-columns: minmax(170px, max-content) minmax(0, 1fr); margin: 0; padding: 6px 16px 14px; }

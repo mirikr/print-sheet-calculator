@@ -11,7 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <!-- ?v= — номер версии. При каждом обновлении сайта увеличьте его здесь (3 места) и в version.json:
        браузеры возьмут свежие файлы, а у открытых вкладок появится уведомление «Обновить». -->
-  <link rel="stylesheet" href="styles.css?v=8">
+  <link rel="stylesheet" href="styles.css?v=9">
   <script>try { var t = localStorage.getItem('imposer-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}</script>
 </head>
 <body>
@@ -136,17 +136,18 @@
 
       <section class="group">
         <h2><span class="step">3</span>Изделия</h2>
-        <div class="seg first" role="radiogroup" aria-label="Сколько видов изделий на листе">
-          <label><input type="radio" name="mm" value="0"><span>Одно изделие<small>одинаковые на листе</small></span></label>
-          <label><input type="radio" name="mm" value="1"><span>Несколько изделий<small>сборный лист</small></span></label>
+        <div class="seg first three" role="radiogroup" aria-label="Какое изделие">
+          <label><input type="radio" name="mm" value="0"><span>Одно изделие<small>одинаковые</small></span></label>
+          <label><input type="radio" name="mm" value="1"><span>Несколько<small>сборный лист</small></span></label>
+          <label><input type="radio" name="mm" value="2"><span>Многостраничное<small>буклет, брошюра</small></span></label>
         </div>
 
         <div id="singleBlock">
         <div class="field spaced">
-          <span class="label">Формат изделия</span>
+          <span class="label" id="itemFormatLabel">Формат изделия</span>
           <div class="picker" id="itemPicker"></div>
         </div>
-        <h3 class="sub"><span class="dot dot-item"></span>Основная часть <small>готовое изделие после резки</small></h3>
+        <h3 class="sub"><span class="dot dot-item"></span><span id="itemSubTitle">Основная часть</span> <small id="itemSubHint">готовое изделие после резки</small></h3>
         <div class="dims">
           <label class="field">
             <span class="label">Ширина</span>
@@ -183,6 +184,36 @@
         </div>
         <p class="hint after">Можно ввести любой из размеров: если знаете размер до обреза, основная часть пересчитается сама.</p>
         <div class="lib-save" id="itemSave"></div>
+        </div>
+
+        <div id="mpBlock" hidden>
+          <h3 class="sub"><span class="dot dot-pages"></span>Многостраничное изделие <small>формат страницы задан выше</small></h3>
+          <div class="row2 tight">
+            <label class="field">
+              <span class="label">Страниц в блоке</span>
+              <span class="input"><input id="mpPages" inputmode="numeric" spellcheck="false"><span class="unit">стр</span></span>
+            </label>
+            <label class="field" id="mpThickField">
+              <span class="label">Толщина листа блока</span>
+              <span class="input"><input id="mpThick" inputmode="numeric" spellcheck="false"><span class="unit">мкм</span></span>
+            </label>
+          </div>
+
+          <span class="label block">Скрепление</span>
+          <div class="seg three" role="radiogroup" aria-label="Скрепление">
+            <label><input type="radio" name="bd" value="saddle"><span>Скрепка<small>кратно 4 стр</small></span></label>
+            <label><input type="radio" name="bd" value="perfect"><span>КБС (клей)<small>кратно 2 стр</small></span></label>
+            <label><input type="radio" name="bd" value="spiral"><span>Пружина<small>кратно 2 стр</small></span></label>
+          </div>
+
+          <div id="mpCoverBlock">
+            <span class="label block">Обложка</span>
+            <div class="seg" role="radiogroup" aria-label="Обложка">
+              <label><input type="radio" name="cv" value="0"><span>Самообложка<small>из той же бумаги</small></span></label>
+              <label><input type="radio" name="cv" value="1"><span>Отдельная<small>на другой бумаге</small></span></label>
+            </div>
+          </div>
+          <p class="hint after" id="mpHint"></p>
         </div>
 
         <div id="multiBlock" hidden>
@@ -224,7 +255,7 @@
         <h2><span class="step">4</span>Тираж</h2>
         <div class="row2 tight">
           <label class="field" id="qtyField">
-            <span class="label">Нужно изделий</span>
+            <span class="label" id="qtyLabel">Нужно изделий</span>
             <span class="input"><input id="qty" inputmode="numeric" spellcheck="false"><span class="unit">шт</span></span>
           </label>
           <label class="field">
@@ -261,7 +292,7 @@
 
       <div class="kpis">
         <div class="kpi main">
-          <div class="kpi-label">Изделий на листе</div>
+          <div class="kpi-label" id="kPerLabel">Изделий на листе</div>
           <div class="kpi-value" id="kPer">—</div>
           <div class="kpi-sub" id="kPerSub">&nbsp;</div>
         </div>
@@ -276,7 +307,7 @@
           <div class="kpi-sub" id="kPaperSub">&nbsp;</div>
         </div>
         <div class="kpi">
-          <div class="kpi-label">Лишние изделия</div>
+          <div class="kpi-label" id="kOverLabel">Лишние изделия</div>
           <div class="kpi-value" id="kOver">—</div>
           <div class="kpi-sub" id="kOverSub">&nbsp;</div>
         </div>
@@ -303,6 +334,19 @@
         <div class="table-wrap"><table class="mtable" id="mTable"></table></div>
       </section>
 
+      <section class="panel" id="mpPanel" hidden>
+        <div class="panel-head">
+          <h2>Многостраничное изделие</h2>
+          <span class="muted" id="mpNote"></span>
+        </div>
+        <div class="mp-summary" id="mpSummary"></div>
+        <div class="panel-head sub-head">
+          <h2>Спуск полос</h2>
+          <span class="muted" id="mpSpreadsNote"></span>
+        </div>
+        <div class="spreads" id="mpSpreads"></div>
+      </section>
+
       <section class="panel variants-panel" id="divPanel" hidden>
         <div class="panel-head">
           <h2>Варианты деления листа бумаги</h2>
@@ -327,6 +371,7 @@
           <li id="legendItem"><span class="sw sw-item"></span>Основная часть изделия</li>
           <li id="legendRot"><span class="sw sw-rot"></span>Основная часть, поворот 90°</li>
           <li id="legendMarks"><span class="sw sw-mark"></span>Метки реза</li>
+          <li id="legendFold" hidden><span class="sw sw-fold"></span>Линия сгиба разворота</li>
         </ul>
       </section>
 
@@ -459,7 +504,7 @@
     <button type="button" class="icon-btn" id="updateClose" aria-label="Скрыть уведомление" title="Скрыть">✕</button>
   </div>
 
-  <script src="config.js?v=8"></script>
-  <script src="app.js?v=8"></script>
+  <script src="config.js?v=9"></script>
+  <script src="app.js?v=9"></script>
 </body>
 </html>
